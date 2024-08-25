@@ -1,7 +1,5 @@
 import './style.css';
-
 import { DefaultAccountContract } from "@aztec/accounts/defaults";
-
 import {  
   AccountManager, 
   Fr, 
@@ -20,24 +18,17 @@ import {
   AztecAddress,
   sleep
 } from "@aztec/aztec.js";
-
 import { type NoirCompiledContract } from '@aztec/types/noir';
-
-// Import the Schnorr Hardcoded Account Contract artifact
 import SchnorrHardcodedAccountContractJson from './contracts/target/schnorr_hardcoded_account_contract-SchnorrHardcodedAccount.json' assert { type: "json" };
-//import { TokenContract } from '@aztec/noir-contracts.js/Token';
 
 const SchnorrHardcodedAccountContractArtifact = loadContractArtifact(SchnorrHardcodedAccountContractJson as NoirCompiledContract);
 
-
-// Define your custom SchnorrHardcodedKeyAccountContract class
 class SchnorrHardcodedKeyAccountContract extends DefaultAccountContract {
   constructor(private privateKey: GrumpkinScalar) {
     super(SchnorrHardcodedAccountContractArtifact);
   }
 
   getDeploymentArgs(): undefined {
-    // This contract has no constructor
     return undefined;
   }
 
@@ -76,20 +67,44 @@ function arrayBufferToHex(buffer: ArrayBuffer): string {
   return Array.prototype.map.call(new Uint8Array(buffer), x => ('00' + x.toString(16)).slice(-2)).join('');
 }
 
-// Store keys securely in localStorage (for simplicity in this example)
 function storeKeys(privateKey: string, publicKey: string) {
   localStorage.setItem('privateKey', privateKey);
   localStorage.setItem('publicKey', publicKey);
 }
 
-// Retrieve keys from localStorage
 function retrieveKeys() {
   const privateKey = localStorage.getItem('privateKey');
   const publicKey = localStorage.getItem('publicKey');
   return { privateKey, publicKey };
 }
 
-// Setup PXE client
+function exportKeys() {
+  const { privateKey, publicKey } = retrieveKeys();
+  const keys = { privateKey, publicKey };
+  const keysJson = JSON.stringify(keys);
+  const blob = new Blob([keysJson], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'keys.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importKeys(event: Event) {
+  const input = event.target as HTMLInputElement;
+  if (input.files && input.files[0]) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const keysJson = e.target?.result as string;
+      const keys = JSON.parse(keysJson);
+      storeKeys(keys.privateKey, keys.publicKey);
+      alert('Keys imported successfully.');
+    };
+    reader.readAsText(input.files[0]);
+  }
+}
+
 const setupSandbox = async () => {
   const PXE_URL = 'http://localhost:8080'; 
   const pxe = createPXEClient(PXE_URL);
@@ -97,38 +112,11 @@ const setupSandbox = async () => {
   return pxe;
 };
 
-// Form submission handler
 const handleFormSubmit = async (event: Event) => {
   event.preventDefault();
 
   try {
-
-
-    /*
-    // Generate and store keys securely
-    const { privateKey, publicKey } = await generateKeyPair();
-    storeKeys(privateKey, publicKey);
-
-    // Convert the private key from string to GrumpkinScalar
-    const grumpkinPrivateKey = GrumpkinScalar.fromString(privateKey.slice(0, 64));
-
-    // Setup PXE and create an account using your custom SchnorrHardcodedKeyAccountContract class
-    const pxe = await setupSandbox();
-
-
-    // Derive and show address TODO: Implement a check to confirm the account has been funded
-
-
-    const account = new AccountManager(pxe, Fr.random(), new SchnorrHardcodedKeyAccountContract(grumpkinPrivateKey));
-    const wallet = await account.waitSetup();
-    const address = wallet.getCompleteAddress().address;
-
-    // Display the deployed account address
-    const accountInfoDiv = document.getElementById('accountInfo')!;
-    accountInfoDiv.innerHTML = `Account deployed at address: ${address}`;
-*/
-
-
+    localStorage.clear();
 
     const { privateKey, publicKey } = await generateKeyPair();
     storeKeys(privateKey, publicKey);
@@ -139,12 +127,11 @@ const handleFormSubmit = async (event: Event) => {
     const accountContract = new SchnorrHardcodedKeyAccountContract(grumpkinPrivateKey);
     const derivedAddress = publicKey; // Correct method to derive address
 
-    // Display the derived address to the user
     const accountInfoDiv = document.getElementById('accountInfo')!;
     accountInfoDiv.innerHTML = `\nDerived account address: ${derivedAddress.toString()}. (TODO) Please fund this address to proceed.`;
 
-    sleep(5000)
-    // Wait for user to fund the account
+    await sleep(1000); // Wait for user to fund the account
+
     // TODO: Implement a check to confirm the account has been funded
 
     const account = new AccountManager(pxe, Fr.random(), accountContract);
@@ -152,14 +139,12 @@ const handleFormSubmit = async (event: Event) => {
     const address = wallet.getCompleteAddress().address;
 
     accountInfoDiv.innerHTML = `Account deployed at address: ${address}`;
-
-
-    
   } catch (e) {
     console.error('Error occurred:', e);
     alert('Failed to create account.');
   }
 };
 
-// Attach event listener to form submission
 document.getElementById('accountForm')!.addEventListener('submit', handleFormSubmit);
+document.getElementById('exportKeys')!.addEventListener('click', exportKeys);
+document.getElementById('importKeys')!.addEventListener('change', importKeys);
