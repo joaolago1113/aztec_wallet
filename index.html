@@ -7,8 +7,8 @@
   <link rel="stylesheet" href="style.css">
   <style>
     body {
-      font-family: Arial, sans-serif;
-      background-color: #f4f4f4;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #e9ecef;
       margin: 0;
       padding: 0;
       display: flex;
@@ -18,41 +18,64 @@
     }
 
     #app {
-      background-color: #fff;
-      border-radius: 8px;
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-      padding: 20px;
+      background-color: #ffffff;
+      border-radius: 10px;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+      padding: 30px;
       text-align: center;
-      width: 300px;
+      width: 350px;
     }
 
     h1 {
-      font-size: 24px;
+      font-size: 28px;
       margin-bottom: 20px;
-      color: #333;
+      color: #343a40;
     }
 
     button, label[for="importKeys"] {
-      background-color: #333;
+      background-color: #007bff;
       color: #fff;
       border: none;
-      padding: 10px 20px;
-      margin: 10px 0;
+      padding: 12px 20px;
+      margin: 15px 0;
       cursor: pointer;
       border-radius: 5px;
       font-size: 16px;
       width: 100%;
       box-sizing: border-box;
+      transition: background-color 0.3s;
     }
 
     button:hover, label[for="importKeys"]:hover {
-      background-color: #555;
+      background-color: #0056b3;
+    }
+
+    #walletConnectLink {
+      padding: 10px;
+      font-size: 16px;
+      border: 1px solid #ced4da;
+      border-radius: 5px;
+      width: calc(100% - 22px);
+      box-sizing: border-box;
+      margin-bottom: 15px;
     }
 
     #accountInfo {
       margin-top: 20px;
       font-size: 14px;
-      color: #555;
+      color: #495057;
+      word-wrap: break-word;
+    }
+
+    #publicKeyDisplay {
+      margin-top: 20px;
+      font-size: 14px;
+      color: #28a745;
+      word-wrap: break-word;
+      padding: 10px;
+      border: 1px solid #ced4da;
+      border-radius: 5px;
+      background-color: #f8f9fa;
     }
 
     #importKeys {
@@ -72,7 +95,10 @@
     <!-- WalletConnect URL Input -->
     <input type="text" id="walletConnectLink" placeholder="Enter WalletConnect URL here">
     <button id="connectAppButton">Connect App</button>
-    
+
+    <!-- Public Key Display -->
+    <div id="publicKeyDisplay">Public Key: Not available</div>
+
     <!-- Account Information Display -->
     <div id="accountInfo"></div>
 

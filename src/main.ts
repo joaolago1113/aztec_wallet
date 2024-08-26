@@ -62,11 +62,17 @@ async function generateKeyPair() {
   };
 }
 
+function displayPublicKey(publicKey: string) {
+  const publicKeyDisplay = document.getElementById('publicKeyDisplay')!;
+  publicKeyDisplay.textContent = `Public Key: ${publicKey}`;
+}
+
 function storeKeys(privateKey: string, publicKey: string) {
   localStorage.setItem('privateKey', privateKey);
   localStorage.setItem('publicKey', publicKey);
+  displayPublicKey(publicKey);
 }
-  
+
 function retrieveKeys() {
   const privateKey = localStorage.getItem('privateKey');
   const publicKey = localStorage.getItem('publicKey');
@@ -99,7 +105,6 @@ function importKeys(event: Event) {
     reader.readAsText(input.files[0]);
   }
 }
-
 let pxeInstance: ReturnType<typeof createPXEClient> | null = null;
 let walletSdkInstance: ShieldswapWalletSdk | null = null;
 
@@ -212,13 +217,10 @@ const connectApp = async (event: Event) => {
   }
 };
 
-
-
-const createAccountSubmit = async (event: Event) => {
+async function createAccountSubmit(event: Event) {
   event.preventDefault();
 
   try {
-
     localStorage.clear();
 
     // Always generate new keys
@@ -246,9 +248,14 @@ const createAccountSubmit = async (event: Event) => {
     console.error('Error occurred:', e);
     alert('Failed to create account.');
   }
-};
+}
 
 document.getElementById('accountForm')!.addEventListener('submit', createAccountSubmit);
 document.getElementById('exportKeys')!.addEventListener('click', exportKeys);
 document.getElementById('importKeys')!.addEventListener('change', importKeys);
 document.getElementById('connectAppButton')!.addEventListener('click', connectApp);
+
+const { publicKey } = retrieveKeys();
+if (publicKey) {
+   displayPublicKey(publicKey);
+}
