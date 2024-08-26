@@ -174,7 +174,7 @@ const connectApp = async (event: Event) => {
       const { id } = event;
       const namespaces = {
         eip1193: {
-          accounts: [`eip1193:1:${publicKey}`], // Chain ID 1 (Ethereum Mainnet)
+          accounts: [`aztec:1:${publicKey}`], // Chain ID 1 (Ethereum Mainnet)
           methods: [
             'aztec_accounts',
             'aztec_sendTransaction',
