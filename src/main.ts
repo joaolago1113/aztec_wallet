@@ -2,6 +2,7 @@ import './style.css';
 import { DefaultAccountContract } from "@aztec/accounts/defaults";
 import { ShieldswapWalletSdk } from "@shieldswap/wallet-sdk";
 import {SignClient} from '@walletconnect/sign-client';
+import { EcdsaRSSHAccountContract } from '@aztec/accounts/ecdsa';
 
 
 import {  
@@ -22,13 +23,14 @@ import {
   AztecAddress,
   sleep
 } from "@aztec/aztec.js";
-import { derivePublicKeyFromSecretKey } from '@aztec/circuits.js';
+import { derivePublicKeyFromSecretKey, Point } from '@aztec/circuits.js';
 
 import { type NoirCompiledContract } from '@aztec/types/noir';
 import SchnorrHardcodedAccountContractJson from './contracts/target/schnorr_hardcoded_account_contract-SchnorrHardcodedAccount.json' assert { type: "json" };
 
 const WALLETCONNECT_PROJECT_ID = "9c949a62a5bde2de36fcd8485d568064";
 
+/*
 const SchnorrHardcodedAccountContractArtifact = loadContractArtifact(SchnorrHardcodedAccountContractJson as NoirCompiledContract);
 
 class SchnorrHardcodedKeyAccountContract extends DefaultAccountContract {
@@ -51,10 +53,11 @@ class SchnorrHardcodedKeyAccountContract extends DefaultAccountContract {
     };
   }
 }
+*/
 
 async function generateKeyPair() {
   const privateKey = GrumpkinScalar.random();
-  const publicKey = derivePublicKeyFromSecretKey(privateKey);
+  const publicKey = derivePublicKeyFromSecretKey(privateKey); 
 
   return {
     privateKey: privateKey,
@@ -62,21 +65,46 @@ async function generateKeyPair() {
   };
 }
 
-function displayPublicKey(publicKey: string) {
+function displayPublicKey() {
+
+  const { publicKey } = retrieveKeys();
+  const contractAddress = retrieveContractAddress();
+
   const publicKeyDisplay = document.getElementById('publicKeyDisplay')!;
-  publicKeyDisplay.textContent = `Public Key: ${publicKey}`;
+
+  publicKeyDisplay.textContent = `Public Key: ${publicKey}\n`;
+
+  if(contractAddress)
+    publicKeyDisplay.textContent += `Contract Address: ${contractAddress.address}\n`;
+  else
+    publicKeyDisplay.textContent += `Contract Address: none\n`;
 }
 
-function storeKeys(privateKey: string, publicKey: string) {
-  localStorage.setItem('privateKey', privateKey);
-  localStorage.setItem('publicKey', publicKey);
-  displayPublicKey(publicKey);
+function storeKeys(privateKey: Fq, publicKey: Point) : void  {
+  
+  localStorage.setItem('privateKey', privateKey.toString());
+  localStorage.setItem('publicKey', publicKey.toString());
 }
 
 function retrieveKeys() {
   const privateKey = localStorage.getItem('privateKey');
   const publicKey = localStorage.getItem('publicKey');
   return { privateKey, publicKey };
+}
+
+function storeContractAddress(contractAddress: CompleteAddress) : void  {
+  localStorage.setItem('contractAddress', contractAddress.toString());
+}
+
+function retrieveContractAddress(): CompleteAddress | null{
+  const contractAccount = localStorage.getItem('contractAddress');
+
+  if (contractAccount){
+
+    return CompleteAddress.fromString( contractAccount )
+  }else{
+    return null;
+  }
 }
 
 function exportKeys() {
@@ -93,6 +121,8 @@ function exportKeys() {
 }
 
 function importKeys(event: Event) {
+
+  //TODO: It should check if a contract address was already generated for it or not, and if not generate it.
   const input = event.target as HTMLInputElement;
   if (input.files && input.files[0]) {
     const reader = new FileReader();
@@ -162,11 +192,132 @@ const connectApp = async (event: Event) => {
     });
 
     // Pair with the provided URI
-    await signClient.core.pairing.pair({ uri });
+    const { topic } = await signClient.core.pairing.pair({ uri });
 
     // Retrieve the keys from local storage
-    const { publicKey } = retrieveKeys();
 
+    signClient.on('session_authenticate', async payload => {
+      console.log('Session authenticated:', payload);
+      // Implement your logic here
+    });
+
+    signClient.on('session_proposal', async (event) => {
+
+
+      const accountContract = retrieveContractAddress();
+
+      if(!accountContract){
+        alert('Please generate the contract address first.');
+        return;
+      }
+
+      const contractAddress = accountContract.address;
+
+      const { id, params } = event;
+      console.log('Session proposal received:', params);
+    
+      // Example: Display proposal details in a modal
+      console.log(params);
+      console.log(event);
+    
+      // You can approve or reject the proposal based on user interaction
+      const namespaces = {
+        eip1193: {
+          accounts: [`aztec:1:${contractAddress}`],
+          methods: ['aztec_accounts'],
+          events: ['accountsChanged'],
+        },
+      };
+    
+      try {
+
+        const { topic, acknowledged } = await signClient.approve({ id, namespaces });
+        const session = await acknowledged()
+
+        //await signClient.core.pairing.activate({ topic })
+
+        console.log('Session Acknowledged:', session.acknowledged);
+
+        //await signClient.core.pairing.updateExpiry({ topic, expiry: params.expiryTimestamp })
+
+      } catch (error) {
+        console.error('Failed to approve session:', error);
+      }
+    });
+
+
+    signClient.on('session_event', (event) => {
+      const { id, topic, params } = event;
+      console.log('Session event:', params);
+
+      /*
+      // Handle different types of session events, such as chain changes
+      switch (params.event.name) {
+        case 'accountsChanged':
+          handleAccountsChanged(params.event.data);
+          break;
+        case 'chainChanged':
+          handleChainChanged(params.chainId);
+          break;
+        default:
+          console.log('Unhandled event:', params.event.name);
+      }
+      */
+     
+    });
+
+signClient.on('session_request', async (event) => {
+  const { id, topic, params } = event;
+
+  const accountContract = retrieveContractAddress();
+
+  if (accountContract) {
+    const contractAddressBuffer = accountContract;
+
+    console.log('Contract Address:', contractAddressBuffer);
+
+    try {
+      console.log('Preparing to send response...');
+      console.log('Response Data:', {
+        id: id,
+        jsonrpc: "2.0",
+        result: contractAddressBuffer.toString(), // Fixed: Removed array brackets
+      });
+
+      await signClient.respond({
+        topic: topic,
+        response: {
+          id: id,
+          jsonrpc: "2.0",
+          result: [contractAddressBuffer.toString()],  
+        },
+      });
+
+      console.log('Session response sent successfully');
+    } catch (error) {
+      console.error('Error responding to session request:', error);
+    }
+  } else {
+    alert("No contract address found. Please generate a contract address.");
+  }
+});
+    
+    
+    
+    
+
+      
+
+    signClient.on('session_ping', (event) => {
+      const { id, topic } = event;
+      console.log('Session ping received:', topic);
+    
+      // You can send a response or just log the ping
+      // signClient.respond({ id, topic, result: 'pong' });
+    });
+    
+    
+/*
     signClient.on('session_proposal', async (event) => {
       console.log('Session proposal received:', event);
 
@@ -194,6 +345,13 @@ const connectApp = async (event: Event) => {
       const session = await acknowledged;
       console.log('Session approved:', session);
 
+      console.log('Pairing topic:', topic);
+
+      // Activate the pairing after the session is acknowledged
+      setTimeout(async () => {
+        await signClient.core.pairing.activate({ topic });
+      }, 1000);  // 1-second delay
+      
       // Handle the connected account using ShieldSwap SDK
       // const account = await walletSdk.connect();
       // console.log("Connected wallet", account.getAddress().toString());
@@ -204,7 +362,7 @@ const connectApp = async (event: Event) => {
       // const address = account.getCompleteAddress().address;
       // accountInfoDiv.innerHTML += `<br/>Account connected with address: ${address}`;
     });
-
+*/
     signClient.on('session_delete', () => {
       console.log('Session deleted');
       const accountInfoDiv = document.getElementById('accountInfo')!;
@@ -225,29 +383,35 @@ async function createAccountSubmit(event: Event) {
 
     // Always generate new keys
     const { privateKey, publicKey } = await generateKeyPair();
-    storeKeys(privateKey.toString(), publicKey.toString());
+    storeKeys(privateKey, publicKey);
 
     const { pxe, walletSdk } = await setupSandbox();
 
-    const accountContract = new SchnorrHardcodedKeyAccountContract(privateKey);
-    const derivedAddress = publicKey;
+
+
+    const accountContract = new EcdsaRSSHAccountContract(publicKey.toBuffer());
+
+    //const accountContract = new SchnorrHardcodedKeyAccountContract(privateKey);
+
+    const derivedAddress = publicKey.toString();
 
     const accountInfoDiv = document.getElementById('accountInfo')!;
-    accountInfoDiv.innerHTML = `\nDerived account address: ${derivedAddress.toString()}. (TODO) Please fund this address to proceed.`;
-
-    await sleep(1000); // Wait for user to fund the account
-
-    // TODO: Implement a check to confirm the account has been funded
+    accountInfoDiv.innerHTML = `\nDerived account address: ${derivedAddress}.`;
 
     const account = new AccountManager(pxe, Fr.random(), accountContract);
     const wallet = await account.waitSetup();
-    const address = wallet.getCompleteAddress().address;
+    const walletaddress = wallet.getCompleteAddress();
+    const address = walletaddress.address;
+
+    storeContractAddress(walletaddress);
 
     accountInfoDiv.innerHTML = `Account deployed at address: ${address}`;
   } catch (e) {
     console.error('Error occurred:', e);
     alert('Failed to create account.');
   }
+
+  displayPublicKey();
 }
 
 document.getElementById('accountForm')!.addEventListener('submit', createAccountSubmit);
@@ -255,7 +419,13 @@ document.getElementById('exportKeys')!.addEventListener('click', exportKeys);
 document.getElementById('importKeys')!.addEventListener('change', importKeys);
 document.getElementById('connectAppButton')!.addEventListener('click', connectApp);
 
-const { publicKey } = retrieveKeys();
-if (publicKey) {
-   displayPublicKey(publicKey);
-}
+displayPublicKey();
+
+
+
+
+
+
+
+
+
