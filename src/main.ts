@@ -2,8 +2,9 @@ import './style.css';
 import { DefaultAccountContract } from "@aztec/accounts/defaults";
 import { ShieldswapWalletSdk } from "@shieldswap/wallet-sdk";
 import {SignClient} from '@walletconnect/sign-client';
-import { EcdsaRSSHAccountContract } from '@aztec/accounts/ecdsa';
+import { EcdsaRSSHAccountContract, EcdsaKAccountContract } from '@aztec/accounts/ecdsa';
 
+import { randomBytes } from 'crypto';
 
 import {  
   AccountManager, 
@@ -56,7 +57,17 @@ class SchnorrHardcodedKeyAccountContract extends DefaultAccountContract {
 */
 
 async function generateKeyPair() {
-  const privateKey = GrumpkinScalar.random();
+  //const privateKey = GrumpkinScalar.random();
+  const privateKeyBuffer = randomBytes(32);
+
+  // Convert the buffer to a hexadecimal string
+  const privateKeyHex = privateKeyBuffer.toString('hex');
+
+  // Create a GrumpkinScalar from the hex string
+  const privateKey = GrumpkinScalar.fromString(privateKeyHex);
+
+  console.log(privateKey);
+
   const publicKey = derivePublicKeyFromSecretKey(privateKey); 
 
   return {
@@ -389,7 +400,7 @@ async function createAccountSubmit(event: Event) {
 
 
 
-    const accountContract = new EcdsaRSSHAccountContract(publicKey.toBuffer());
+    const accountContract = new EcdsaKAccountContract(publicKey.toBuffer());
 
     //const accountContract = new SchnorrHardcodedKeyAccountContract(privateKey);
 
@@ -412,20 +423,61 @@ async function createAccountSubmit(event: Event) {
   }
 
   displayPublicKey();
-}
+} 
 
 document.getElementById('accountForm')!.addEventListener('submit', createAccountSubmit);
 document.getElementById('exportKeys')!.addEventListener('click', exportKeys);
 document.getElementById('importKeys')!.addEventListener('change', importKeys);
 document.getElementById('connectAppButton')!.addEventListener('click', connectApp);
 
+
+  const tab1Button = document.getElementById('tab1Button');
+  const tab2Button = document.getElementById('tab2Button');
+  const tab1 = document.getElementById('tab1');
+  const tab2 = document.getElementById('tab2');
+  const addressDropdown = document.getElementById('addressDropdown') as HTMLSelectElement;
+  const publicKeyDisplay = document.getElementById('publicKeyDisplay');
+
+  const accounts = [
+    { name: 'Account 1', publicKey: '0x2c3f...757f' },
+    { name: 'Account 2', publicKey: '0x1a2b...3c4d' },
+    { name: 'Account 3', publicKey: '0x5e6f...8g9h' }
+  ];
+
+  // Populate the dropdown with accounts
+  if (addressDropdown) {
+    accounts.forEach(account => {
+      const option = document.createElement('option');
+      option.value = account.publicKey;
+      option.textContent = account.name;
+      addressDropdown.appendChild(option);
+    });
+  }
+
+  // Handle account selection
+  if (addressDropdown && publicKeyDisplay) {
+    addressDropdown.addEventListener('change', () => {
+      const selectedAccount = accounts.find(account => account.publicKey === addressDropdown.value);
+      publicKeyDisplay.textContent = `Public Key: ${selectedAccount ? selectedAccount.publicKey : 'Not available'}`;
+    });
+  }
+
+
+  // Tab navigation
+  if (tab1Button && tab2Button && tab1 && tab2) {
+    tab1Button.addEventListener('click', () => {
+
+      tab1.classList.add('active');
+      tab2.classList.remove('active');
+    });
+
+    tab2Button.addEventListener('click', () => {
+      tab1.classList.remove('active');
+      tab2.classList.add('active');
+    });
+  }
+
 displayPublicKey();
-
-
-
-
-
-
 
 
 
