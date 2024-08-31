@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Aztec Wallet UI</title>
   <link rel="stylesheet" href="src/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
   <style>
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -28,7 +30,7 @@
       margin-bottom: 20px;
     }
 
-    button, label[for="importKeys"] {
+    button{
       border: none;
       padding: 12px 20px;
       margin: 15px 0;
@@ -62,10 +64,6 @@
       border-radius: 5px;
     }
 
-    #importKeys {
-      display: none; /* Hide the actual file input */
-    }
-
     .tab {
       display: none;
     }
@@ -85,9 +83,30 @@
       box-sizing: border-box;
     }
 
-    option {
-      padding: 10px;
-      font-size: 16px;
+
+    #accountContainer {
+      display: flex;
+      align-items: center; /* Align items vertically centered */
+    }
+
+    #accountSelect {
+      margin-right: 10px; /* Optional: Add some space between the elements */
+    }
+
+    #copyAddressButton {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 20px; /* Adjust the size of the icon */
+      padding: 5px;
+      width: 30px; /* Set the width slightly wider than the icon */
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #copyAddressButton:hover {
+      color: #007bff; /* Change color on hover */
     }
 
   </style>
@@ -95,6 +114,15 @@
 <body>
   <div id="app">
       <h1>Aztec Wallet</h1>
+      <!-- Account Selection Dropdown -->
+      <div id="accountContainer">
+        <select id="accountSelect">
+          <option value="" disabled selected>Select an account</option>
+        </select>
+        <button id="copyAddressButton">
+          <i class="fas fa-clipboard"></i>
+        </button>
+      </div>
 
       <div class="nav-buttons">
           <button id="tab1Button">Home</button>
@@ -107,14 +135,7 @@
               <button type="submit">Create New Account</button>
           </form>
           <button id="exportKeys">Export Keys</button>
-          <label for="importKeys">Import Keys</label>
-          <input type="file" id="importKeys" />
-
-          <!-- Account Selection Dropdown -->
-          <select id="accountSelect">
-            <option value="" disabled selected>Select an account</option>
-          </select>
-
+          <button id="importKeys">Import Keys</button>
       </div>
 
       <!-- WalletConnect URL Input -->
@@ -122,9 +143,6 @@
           <input type="text" id="walletConnectLink" placeholder="Enter WalletConnect URL here">
           <button id="connectAppButton">Connect</button>
       </div>
-
-      <!-- Public Key Display -->
-      <div id="publicKeyDisplay">Public Key: Not available</div>
 
       <!-- Account Information Display -->
       <div id="accountInfo"></div>

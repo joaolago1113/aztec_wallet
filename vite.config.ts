@@ -17,14 +17,16 @@ export default defineConfig({
     ].filter(Boolean),  // Filter out undefined plugins in development
     build: {
         target: "esnext",
-        sourcemap: process.env.NODE_ENV === "production",  // Disable source maps in development
-        minify: process.env.NODE_ENV === "production" ? 'esbuild' : false,  // Disable minification in development
-        cacheDir: 'node_modules/.vite_cache',  // Cache directory for faster rebuilds
+        sourcemap: true,  // Enable source maps
+        minify: false,  // Disable minification in development
     },
+    base: '/',  // Ensure the base path is correct
     optimizeDeps: {
         include: ['@aztec/bb.js'],  // Explicitly include your dependencies
         esbuildOptions: {
             target: "esnext",
+            sourcemap: true,  // Ensure source maps are generated for dependencies
+            minify: false,  // Disable minification in development
         },
     },
     server: {
