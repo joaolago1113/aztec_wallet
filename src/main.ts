@@ -321,7 +321,9 @@ const connectApp = async (event: Event) => {
     // Initialize the signClient if not already done
 
     // Pair with the provided URI
-    await signClient.core.pairing.pair({ uri });
+    const {topic} = await signClient.core.pairing.pair({ uri });
+
+    await signClient.core.pairing.activate({ topic });
 
     displayPairings()
   } catch (e) {
