@@ -1,12 +1,12 @@
 import './style.css';
 import { DefaultAccountContract } from "@aztec/accounts/defaults";
 import { ShieldswapWalletSdk } from "@shieldswap/wallet-sdk";
-import {SignClient} from '@walletconnect/sign-client';
+import { SignClient } from '@walletconnect/sign-client';
+
 import { getEcdsaKWallet, EcdsaKAccountContract, EcdsaKAccountContractArtifact } from '@aztec/accounts/ecdsa';
 
 import { randomBytes, subtle } from 'crypto';
 
-import { Account } from './Account.js';
 
 
 import {  
@@ -36,7 +36,20 @@ import { computePartialAddress, computeContractAddressFromInstance } from '@azte
 import { type NoirCompiledContract, } from '@aztec/types/noir';
 //import SchnorrHardcodedAccountContractJson from './contracts/target/schnorr_hardcoded_account_contract-SchnorrHardcodedAccount.json' assert { type: "json" };
 
+
 const WALLETCONNECT_PROJECT_ID = "9c949a62a5bde2de36fcd8485d568064";
+
+const SHIELDSWAP_METADATA = {
+  name: "Aztec Wallet",
+  description: "",
+  url: "http://localhost:5173",
+  icons: [],
+};
+
+let signClient = await SignClient.init({
+  projectId: WALLETCONNECT_PROJECT_ID,
+  metadata: SHIELDSWAP_METADATA,
+});;
 
 import { KeyStore} from './Keystore.js';
 
@@ -85,7 +98,7 @@ class KeystoreFactory {
 }
 
 // Holds the index of the currently selected account
-let currentAccountIndex: number = 0;  
+let currentAccountIndex: number | null = null;  
 
 /*
 const setupSandbox = async () => {
@@ -140,6 +153,7 @@ class SchnorrHardcodedKeyAccountContract extends DefaultAccountContract {
   
 */
 import { createHash } from 'crypto';
+import { PairingTypes } from '@walletconnect/types';
 
 async function generateSecretKey(seed?: string): Promise<Fr> {
   if (!seed) {
@@ -226,9 +240,13 @@ function storeContractAddress(contractAddress: CompleteAddress) : void  {
 */
 
 
-async function retrieveContractAddress(index?: number): Promise<CompleteAddress> {
+async function retrieveContractAddress(index?: number): Promise<CompleteAddress | null> {
   const keystore = KeystoreFactory.getKeystore();
   const accounts = await keystore.getAccounts();
+
+  if (currentAccountIndex === null) {
+    return Promise.resolve(null);
+  }
 
   index = index || currentAccountIndex;
 
@@ -280,17 +298,14 @@ async function importKeys(event: Event) {
   }
 }
 
-
-const SHIELDSWAP_METADATA = {
-  name: "Aztec Wallet",
-  description: "",
-  url: "http://localhost:5173",
-  icons: [],
-};
-
 const connectApp = async (event: Event) => {
   event.preventDefault();
 
+
+  if (currentAccountIndex === null) {
+    return;
+  }
+  
   try {
     //const { pxe, walletSdk } = await setupSandbox();
 
@@ -304,87 +319,90 @@ const connectApp = async (event: Event) => {
     }
 
     // Initialize the signClient if not already done
-    const signClient = await SignClient.init({
-      projectId: WALLETCONNECT_PROJECT_ID,
-      metadata: SHIELDSWAP_METADATA,
-    });
 
     // Pair with the provided URI
     await signClient.core.pairing.pair({ uri });
 
-    // Retrieve the keys from local storage
+    displayPairings()
+  } catch (e) {
+    console.error('Error occurred:', e);
+    alert('Failed to connect wallet.');
+  }
+};
 
-    signClient.on('session_authenticate', async payload => {
-      console.log('Session authenticated:', payload);
-      // Implement your logic here
-    });
+// Retrieve the keys from local storage
 
-    signClient.on('session_proposal', async (event) => {
+signClient.on('session_authenticate', async payload => {
+  console.log('Session authenticated:', payload);
+  // Implement your logic here
+});
 
-      if (currentAccountIndex === null) {
-        return;
-      }
-      const accountContract = await retrieveContractAddress();
+signClient.on('session_proposal', async (event) => {
 
-      if(!accountContract){
-        alert('Please generate the contract address first.');
-        return;
-      }
+  if (currentAccountIndex === null) {
+    return;
+  }
+  const accountContract = await retrieveContractAddress();
 
-      const contractAddress = accountContract.address;
+  if(!accountContract){
+    alert('Please generate the contract address first.');
+    return;
+  }
 
-      const { id, params } = event;
-      console.log('Session proposal received:', params);
-    
-      // Example: Display proposal details in a modal
-      console.log(params);
-      console.log(event);
-    
-      // You can approve or reject the proposal based on user interaction
-      const namespaces = {
-        eip1193: {
-          accounts: [`aztec:1:${contractAddress}`],
-          methods: ['aztec_accounts'],
-          events: ['accountsChanged'],
-        },
-      };
-    
-      try {
+  const contractAddress = accountContract.address;
 
-        const { topic, acknowledged } = await signClient.approve({ id, namespaces });
-        const session = await acknowledged()
+  const { id, params } = event;
+  console.log('Session proposal received:', params);
 
-        //await signClient.core.pairing.activate({ topic })
+  // Example: Display proposal details in a modal
+  console.log(params);
+  console.log(event);
 
-        console.log('Session Acknowledged:', session.acknowledged);
+  // You can approve or reject the proposal based on user interaction
+  const namespaces = {
+    eip1193: {
+      accounts: [`aztec:1:${contractAddress}`],
+      methods: ['aztec_accounts'],
+      events: ['accountsChanged'],
+    },
+  };
 
-        //await signClient.core.pairing.updateExpiry({ topic, expiry: params.expiryTimestamp })
+  try {
 
-      } catch (error) {
-        console.error('Failed to approve session:', error);
-      }
-    });
+    const { topic, acknowledged } = await signClient.approve({ id, namespaces });
+    const session = await acknowledged()
+
+    //await signClient.core.pairing.activate({ topic })
+
+    console.log('Session Acknowledged:', session.acknowledged);
+
+    //await signClient.core.pairing.updateExpiry({ topic, expiry: params.expiryTimestamp })
+
+  } catch (error) {
+    console.error('Failed to approve session:', error);
+  }
+});
 
 
-    signClient.on('session_event', (event) => {
-      const { id, topic, params } = event;
-      console.log('Session event:', params);
+signClient.on('session_event', (event) => {
+  const { id, topic, params } = event;
+  console.log('Session event:', params);
 
-      /*
-      // Handle different types of session events, such as chain changes
-      switch (params.event.name) {
-        case 'accountsChanged':
-          handleAccountsChanged(params.event.data);
-          break;
-        case 'chainChanged':
-          handleChainChanged(params.chainId);
-          break;
-        default:
-          console.log('Unhandled event:', params.event.name);
-      }
-      */
-     
-    });
+  /*
+  // Handle different types of session events, such as chain changes
+  switch (params.event.name) {
+    case 'accountsChanged':
+      handleAccountsChanged(params.event.data);
+      break;
+    case 'chainChanged':
+      handleChainChanged(params.chainId);
+      break;
+    default:
+      console.log('Unhandled event:', params.event.name);
+  }
+  */
+
+});
 
 signClient.on('session_request', async (event) => {
   const { id, topic, params } = event;
@@ -432,72 +450,66 @@ signClient.on('session_request', async (event) => {
 
       
 
-    signClient.on('session_ping', (event) => {
-      const { id, topic } = event;
-      console.log('Session ping received:', topic);
-    
-      // You can send a response or just log the ping
-      // signClient.respond({ id, topic, result: 'pong' });
-    });
-    
-    
+signClient.on('session_ping', (event) => {
+  const { id, topic } = event;
+  console.log('Session ping received:', topic);
+
+  // You can send a response or just log the ping
+  // signClient.respond({ id, topic, result: 'pong' });
+});
+
+
 /*
-    signClient.on('session_proposal', async (event) => {
-      console.log('Session proposal received:', event);
+signClient.on('session_proposal', async (event) => {
+  console.log('Session proposal received:', event);
 
-      // Approve the session proposal with specific namespaces
-      const { id } = event;
-      const namespaces = {
-        eip1193: {
-          accounts: [`aztec:1:${publicKey}`], // Chain ID 1 (Ethereum Mainnet)
-          methods: [
-            'aztec_accounts',
-            'aztec_sendTransaction',
-            'aztec_createAuthWitness',
-            'aztec_experimental_createSecretHash',
-            'aztec_experimental_tokenRedeemShield',
-          ],
-          events: ['accountsChanged'],
-        },
-      };
+  // Approve the session proposal with specific namespaces
+  const { id } = event;
+  const namespaces = {
+    eip1193: {
+      accounts: [`aztec:1:${publicKey}`], // Chain ID 1 (Ethereum Mainnet)
+      methods: [
+        'aztec_accounts',
+        'aztec_sendTransaction',
+        'aztec_createAuthWitness',
+        'aztec_experimental_createSecretHash',
+        'aztec_experimental_tokenRedeemShield',
+      ],
+      events: ['accountsChanged'],
+    },
+  };
 
-      const { topic, acknowledged } = await signClient.approve({
-        id,
-        namespaces,
-      });
+  const { topic, acknowledged } = await signClient.approve({
+    id,
+    namespaces,
+  });
 
-      const session = await acknowledged;
-      console.log('Session approved:', session);
+  const session = await acknowledged;
+  console.log('Session approved:', session);
 
-      console.log('Pairing topic:', topic);
+  console.log('Pairing topic:', topic);
 
-      // Activate the pairing after the session is acknowledged
-      setTimeout(async () => {
-        await signClient.core.pairing.activate({ topic });
-      }, 1000);  // 1-second delay
-      
-      // Handle the connected account using ShieldSwap SDK
-      // const account = await walletSdk.connect();
-      // console.log("Connected wallet", account.getAddress().toString());
+  // Activate the pairing after the session is acknowledged
+  setTimeout(async () => {
+    await signClient.core.pairing.activate({ topic });
+  }, 1000);  // 1-second delay
+  
+  // Handle the connected account using ShieldSwap SDK
+  // const account = await walletSdk.connect();
+  // console.log("Connected wallet", account.getAddress().toString());
 
-      // const accountInfoDiv = document.getElementById('accountInfo')!;
-      // accountInfoDiv.innerHTML = `Connected wallet address: ${account.getAddress().toString()}`;
+  // const accountInfoDiv = document.getElementById('accountInfo')!;
+  // accountInfoDiv.innerHTML = `Connected wallet address: ${account.getAddress().toString()}`;
 
-      // const address = account.getCompleteAddress().address;
-      // accountInfoDiv.innerHTML += `<br/>Account connected with address: ${address}`;
-    });
+  // const address = account.getCompleteAddress().address;
+  // accountInfoDiv.innerHTML += `<br/>Account connected with address: ${address}`;
+});
 */
-    signClient.on('session_delete', () => {
-      console.log('Session deleted');
-      const accountInfoDiv = document.getElementById('accountInfo')!;
-      accountInfoDiv.innerHTML = 'Wallet disconnected';
-    });
-
-  } catch (e) {
-    console.error('Error occurred:', e);
-    alert('Failed to connect wallet.');
-  }
-};
+signClient.on('session_delete', () => {
+  console.log('Session deleted');
+  const accountInfoDiv = document.getElementById('accountInfo')!;
+  accountInfoDiv.innerHTML = 'Wallet disconnected';
+});
 
 
 /*
@@ -734,10 +746,6 @@ async function createAccount(secretKey: Fr) {
 
     // Update the UI
     updateAccountUI();
-
-    // Show the derived account address in the UI
-    const accountInfoDiv = document.getElementById('accountInfo')!;
-    accountInfoDiv.innerHTML = `Account deployed at address: ${completeAddress.address}`;
   } catch (e) {
     console.error('Error occurred:', e);
     alert('Failed to create account.');
@@ -766,7 +774,6 @@ function setupTabNavigation(){
   }  
 }
 
-setupTabNavigation();
 
   /*
   function updateAccountDropdown() {
@@ -839,8 +846,6 @@ async function updateAccountUI() {
   }
 }
 
-updateAccountUI();
-
 
 function setAccountSelectionListener(){
   const accountSelect = document.getElementById('accountSelect') as HTMLSelectElement;
@@ -850,13 +855,13 @@ function setAccountSelectionListener(){
     if(selectedOption.index){
 
       const selectedIndex = selectedOption.index-1;
-      localStorage.setItem('currentAccountIndex', selectedIndex.toString());
+      //localStorage.setItem('currentAccountIndex', selectedIndex.toString());
       currentAccountIndex = selectedIndex; // Update the currentAccountIndex variable
     }
   });  
 }
 
-setAccountSelectionListener();
+
 
   // Populate the account dropdown
 
@@ -905,23 +910,76 @@ function addCopyClipboard() {
   });
 };
 
+function displayPairings() {
+  const pairingList = document.getElementById('pairingList')!;
+  const pairingItems: PairingTypes.Struct[] = signClient.core.pairing.getPairings();
+  pairingList.innerHTML = '';
 
-addCopyClipboard();
+  function disconnectApp(topic: string) {
+    signClient.core.pairing.disconnect({ topic });
+    displayPairings();
 
+    // Remove the associated row from the UI
+    const pairingList = document.getElementById('pairingList')!;
+    const pairingItems: PairingTypes.Struct[] = signClient.core.pairing.getPairings();
+    pairingItems.forEach((pairing: PairingTypes.Struct) => {
+      if (pairing.topic === topic) {
+        const pairingItem = document.getElementById(`pairing-${topic}`);
+        if (pairingItem) {
+          pairingList.removeChild(pairingItem);
+        }
+      }
+    });
+  }
+
+  pairingItems.forEach((pairing: PairingTypes.Struct) => {
+    const pairingItem = document.createElement('li');
+    pairingItem.id = `pairing-${pairing.topic}`;
+
+    const pairingInfo = document.createElement('div');
+    pairingInfo.innerHTML = `
+      <p><strong>Active:</strong> ${pairing.active}</p>
+      <p><strong>Peer Name:</strong> ${pairing.peerMetadata?.name}</p>
+      <p><strong>Peer Description:</strong> ${pairing.peerMetadata?.description}</p>
+      <p><strong>Peer URL:</strong> ${pairing.peerMetadata?.url}</p>
+    `;
+
+    const disconnectButton = document.createElement('button');
+    disconnectButton.textContent = 'Disconnect';
+    disconnectButton.addEventListener('click', () => {
+      disconnectApp(pairing.topic);
+    });
+
+    pairingItem.appendChild(pairingInfo);
+    pairingItem.appendChild(disconnectButton);
+    pairingList.appendChild(pairingItem);
+  });
+}
 
 
 function setupUi() {
 
-  const storedCurrentAccountIndex = localStorage.getItem('currentAccountIndex');
+  //const storedCurrentAccountIndex = localStorage.getItem('currentAccountIndex');
 
-  if (storedCurrentAccountIndex) {
-    currentAccountIndex = parseInt(storedCurrentAccountIndex, 10);
-  }
+  //if (storedCurrentAccountIndex) {
+  //  currentAccountIndex = parseInt(storedCurrentAccountIndex, 10);
+  //}
 
   document.getElementById('accountForm')!.addEventListener('submit', createAccountSubmit);
   document.getElementById('exportKeys')!.addEventListener('click', exportKeys);
   document.getElementById('importKeys')!.addEventListener('click', importKeys);
   document.getElementById('connectAppButton')!.addEventListener('click', connectApp);
 
+  setupTabNavigation();
+  updateAccountUI();
+  setAccountSelectionListener();
+  displayPairings();
+  addCopyClipboard();
 }
+
+
+
 setupUi();
+
+
+
