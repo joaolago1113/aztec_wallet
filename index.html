@@ -15,53 +15,70 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      height: 100vh;
+      min-height: 100vh;
+      background-color: #1a1a1a;
+      color: #e0e0e0;
     }
 
     #app {
-      border-radius: 10px;
+      background-color: #2c2c2c;
+      border-radius: 12px;
       padding: 30px;
       text-align: center;
-      width: 350px;
+      width: 380px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     }
 
     h1 {
-      font-size: 28px;
-      margin-bottom: 20px;
+      font-size: 32px;
+      margin-bottom: 24px;
+      color: #ffffff;
     }
 
-    button{
+    h2 {
+      font-size: 24px;
+      margin-top: 30px;
+      margin-bottom: 15px;
+      color: #ffffff;
+    }
+
+    button {
       border: none;
       padding: 12px 20px;
-      margin: 15px 0;
+      margin: 12px 0;
       cursor: pointer;
-      border-radius: 5px;
+      border-radius: 6px;
       font-size: 16px;
       width: 100%;
       box-sizing: border-box;
+      background-color: #4a4a4a;
+      color: #ffffff;
+      transition: background-color 0.3s;
+    }
+
+    button:hover {
+      background-color: #5a5a5a;
     }
 
     #walletConnectLink {
-      padding: 10px;
+      padding: 12px;
       font-size: 16px;
-      border-radius: 5px;
-      width: calc(100% - 22px);
+      border-radius: 6px;
+      width: calc(100% - 24px);
       box-sizing: border-box;
       margin-bottom: 15px;
+      border: 1px solid #4a4a4a;
+      background-color: #3a3a3a;
+      color: #e0e0e0;
     }
 
     #accountInfo {
       margin-top: 20px;
       font-size: 14px;
       word-wrap: break-word;
-    }
-
-    #publicKeyDisplay {
-      margin-top: 20px;
-      font-size: 14px;
-      word-wrap: break-word;
+      background-color: #3a3a3a;
       padding: 10px;
-      border-radius: 5px;
+      border-radius: 6px;
     }
 
     .tab {
@@ -72,83 +89,161 @@
       display: block;
     }
 
-
     select {
       width: 100%;
-      padding: 10px;
+      padding: 12px;
       margin-top: 15px;
       font-size: 16px;
-      border-radius: 5px;
-      border: 1px solid #ccc;
+      border-radius: 6px;
+      border: 1px solid #4a4a4a;
       box-sizing: border-box;
+      background-color: #3a3a3a;
+      color: #e0e0e0;
     }
-
 
     #accountContainer {
       display: flex;
-      align-items: center; /* Align items vertically centered */
+      align-items: center; /* Change back to center */
+      margin-bottom: 20px;
     }
 
     #accountSelect {
-      margin-right: 10px; /* Optional: Add some space between the elements */
+      flex-grow: 1;
+      margin-right: 10px;
+      margin-top: 0;
     }
 
     #copyAddressButton {
       background: none;
       border: none;
       cursor: pointer;
-      font-size: 20px; /* Adjust the size of the icon */
-      padding: 5px;
-      width: 30px; /* Set the width slightly wider than the icon */
+      font-size: 20px;
+      padding: 0;
+      width: 48px;
+      height: 100%; /* Match height to the select element */
       display: flex;
       justify-content: center;
       align-items: center;
+      color: #7289da;
+      transition: color 0.3s;
+      margin-top: 0;
     }
 
-    #copyAddressButton:hover {
-      color: #007bff; /* Change color on hover */
+    #copyAddressButton i {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      padding-bottom: 2px; /* Fine-tune vertical alignment */
     }
 
+    .nav-buttons {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .nav-buttons button {
+      width: 48%;
+      background-color: #7289da;
+    }
+
+    .nav-buttons button:hover {
+      background-color: #5b6eae;
+    }
+
+    #tokensTable {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+
+    #tokensTable th, #tokensTable td {
+      border: 1px solid #4a4a4a;
+      padding: 12px;
+      text-align: left;
+    }
+
+    #tokensTable th {
+      background-color: #3a3a3a;
+      font-weight: bold;
+    }
+
+    #createTokensButton {
+      background-color: #43b581;
+    }
+
+    #createTokensButton:hover {
+      background-color: #3ca374;
+    }
+
+    button:disabled {
+      background-color: #3a3a3a;
+      color: #808080;
+      cursor: not-allowed;
+    }
+
+    button:disabled:hover {
+      background-color: #3a3a3a;
+    }
   </style>
 </head>
 <body>
   <div id="app">
-      <h1>Aztec Wallet</h1>
-      <!-- Account Selection Dropdown -->
-      <div id="accountContainer">
-        <select id="accountSelect">
-          <option value="" disabled selected>Select an account</option>
-        </select>
-        <button id="copyAddressButton">
-          <i class="fas fa-clipboard"></i>
-        </button>
-      </div>
+    <h1>Aztec Wallet</h1>
+    <!-- Account Selection Dropdown -->
+    <div id="accountContainer">
+      <select id="accountSelect">
+        <option value="" disabled selected>Select an account</option>
+      </select>
+      <button id="copyAddressButton" title="Copy address">
+        <i class="fas fa-clipboard"></i>
+      </button>
+    </div>
 
-      <div class="nav-buttons">
-          <button id="tab1Button">Home</button>
-          <button id="tab2Button">Connect App</button>
-      </div>
+    <div class="nav-buttons">
+      <button id="tab1Button">Home</button>
+      <button id="tab2Button">Connect App</button>
+    </div>
 
-      <!-- Create Account Form -->
-      <div id="tab1" class="tab active">
-          <form id="accountForm">
-              <button type="submit">Create New Account</button>
-          </form>
-          <button id="exportKeys">Export Keys</button>
-          <button id="importKeys">Import Keys</button>
-      </div>
+    <!-- Create Account Form -->
+    <div id="tab1" class="tab active">
+      <form id="accountForm">
+        <button type="submit">Create New Account</button>
+      </form>
+      <button id="exportKeys">Export Keys</button>
+      <button id="importKeys">Import Keys</button>
+    </div>
 
-      <!-- WalletConnect URL Input -->
-      <div id="tab2" class="tab">
-          <input type="text" id="walletConnectLink" placeholder="Enter WalletConnect URL here">
-          <button id="connectAppButton">Connect</button>
-          <div id="pairingList"></div>
-      </div>
+    <!-- WalletConnect URL Input -->
+    <div id="tab2" class="tab">
+      <input type="text" id="walletConnectLink" placeholder="Enter WalletConnect URL here">
+      <button id="connectAppButton">Connect</button>
+      <div id="pairingList"></div>
+    </div>
 
-      <!-- Account Information Display -->
-      <div id="accountInfo"></div>
+    <!-- Tokens Table -->
+    <h2>My Tokens</h2>
+    <table id="tokensTable">
+      <thead>
+        <tr>
+          <th>Token Name</th>
+          <th>Send</th>
+          <th>Receive</th>
+        </tr>
+      </thead>
+      <tbody id="tokensTableBody">
+        <!-- Tokens will be dynamically added here -->
+      </tbody>
+    </table>
+
+    <!-- Create/Mint Tokens Button -->
+    <button id="createTokensButton">Create/Mint Tokens</button>
+    
+    <!-- Account Information Display -->
+    <div id="accountInfo"></div>
   </div>
-  
 
   <script type="module" src="/src/main.ts"></script>
 </body>
