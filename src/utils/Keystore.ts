@@ -57,6 +57,7 @@ export class KeyStore {
     const publicKeysHash = publicKeys.hash();
     const account = computeAddress(publicKeysHash, partialAddress);
 
+
     // Naming of keys is as follows ${account}-${n/iv/ov/t}${sk/pk}_m
     await this.#keys.set(`${account.toString()}-ivsk_m`, masterIncomingViewingSecretKey.toBuffer());
     await this.#keys.set(`${account.toString()}-ovsk_m`, masterOutgoingViewingSecretKey.toBuffer());
@@ -81,10 +82,8 @@ export class KeyStore {
     );
     await this.#keys.set(`${account.toString()}-tpk_m_hash`, publicKeys.masterTaggingPublicKey.hash().toBuffer());
 
-
-    //TODO: Altered
+    // Save the secret key
     await this.#keys.set(`${account.toString()}-sk_m`, sk.toBuffer());
-
 
     // At last, we return the newly derived account address
     return Promise.resolve(new CompleteAddress(account, publicKeys, partialAddress));
@@ -93,11 +92,14 @@ export class KeyStore {
 
   //TODO: Altered
   public async getSecretKey(account: AztecAddress): Promise<Fr> {
-    const secretKeyBuffer = this.#keys.get(`${account.toString()}-sk_m`);
+
+    const secretKeyBuffer = await this.#keys.get(`${account.toString()}-sk_m`);
+
     if (!secretKeyBuffer) {
-    throw new Error(
-      `Account ${account.toString()} does not exist. Registered accounts: ${await this.getAccounts()}.`,
-    );
+      const registeredAccounts = await this.getAccounts();
+      throw new Error(
+        `Account ${account.toString()} does not exist. Registered accounts: ${registeredAccounts.map(acc => acc.toString()).join(', ')}.`,
+      );
     }
     return Promise.resolve(Fr.fromBuffer(secretKeyBuffer));
   }

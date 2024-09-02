@@ -10,6 +10,7 @@ export class UIManager {
   private accountService!: AccountService;
   private tokenService!: TokenService;
   private walletConnectService!: WalletConnectService;
+  private modalElement: HTMLElement | null = null;
 
   setTokenService(tokenService: TokenService) {
     this.tokenService = tokenService;
@@ -21,7 +22,175 @@ export class UIManager {
     this.walletConnectService = walletConnectService;
   }
 
-  constructor() {}
+  constructor() {
+    this.createModal();
+  }
+
+  private createModal() {
+    this.modalElement = document.createElement('div');
+    this.modalElement.className = 'modal';
+    this.modalElement.style.display = 'none';
+    this.modalElement.innerHTML = `
+      <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2>Create/Mint Token</h2>
+        <form id="createMintTokenForm">
+          <div class="form-group">
+            <label for="tokenName">Token Name</label>
+            <input type="text" id="tokenName" required>
+          </div>
+          <div class="form-group">
+            <label for="tokenSymbol">Token Symbol</label>
+            <input type="text" id="tokenSymbol" required>
+          </div>
+          <div class="form-group">
+            <label for="tokenAmount">Amount to Mint</label>
+            <input type="number" id="tokenAmount" required>
+          </div>
+          <button type="submit" id="createMintTokenButton">Create/Mint</button>
+        </form>
+      </div>
+    `;
+    document.body.appendChild(this.modalElement);
+
+    const form = this.modalElement.querySelector('#createMintTokenForm');
+    form?.addEventListener('submit', this.handleCreateMintTokenSubmit.bind(this));
+
+    const closeButton = this.modalElement.querySelector('.close');
+    closeButton?.addEventListener('click', this.closeModal.bind(this));
+
+    // Add CSS for the modal
+    const style = document.createElement('style');
+    style.textContent = `
+      .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(0,0,0,0.4);
+      }
+      .modal-content {
+        background-color: #1a1a1a;
+        color: #ffffff;
+        margin: 10% auto;
+        padding: 20px;
+        border: 1px solid #888;
+        width: 90%;
+        max-width: 400px;
+        border-radius: 10px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      }
+      .close {
+        color: #aaa;
+        float: right;
+        font-size: 28px;
+        font-weight: bold;
+        cursor: pointer;
+      }
+      .close:hover,
+      .close:focus {
+        color: #fff;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      #createMintTokenForm .form-group {
+        margin-bottom: 15px;
+      }
+      #createMintTokenForm label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: bold;
+      }
+      #createMintTokenForm input {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #444;
+        background-color: #2a2a2a;
+        color: #fff;
+        border-radius: 4px;
+        box-sizing: border-box;
+      }
+      #createMintTokenForm button {
+        width: 100%;
+        padding: 10px;
+        background-color: #3498db;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        transition: background-color 0.3s;
+      }
+      #createMintTokenForm button:hover {
+        background-color: #2980b9;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  showCreateMintTokenPopup() {
+    if (this.accountService.getCurrentAccountIndex() === null) {
+      alert("No account created yet. Please create an account before creating or minting tokens.");
+      return;
+    }
+
+    if (this.modalElement) {
+      this.modalElement.style.display = 'block';
+    }
+  }
+
+  private handleCreateMintTokenSubmit(event: Event) {
+    event.preventDefault();
+    const nameInput = document.getElementById('tokenName') as HTMLInputElement;
+    const symbolInput = document.getElementById('tokenSymbol') as HTMLInputElement;
+    const amountInput = document.getElementById('tokenAmount') as HTMLInputElement;
+    const submitButton = document.querySelector('#createMintTokenForm button[type="submit"]') as HTMLButtonElement;
+
+    const tokenData = {
+      name: nameInput.value,
+      symbol: symbolInput.value,
+      amount: amountInput.value
+    };
+
+    // Disable the button
+    submitButton.disabled = true;
+    submitButton.textContent = 'Processing...';
+
+    this.tokenService.createOrMintToken(tokenData)
+      .then(() => {
+        this.closeModal();
+      })
+      .catch(error => {
+        console.error('Detailed error in handleCreateMintTokenSubmit:', error);
+        let errorMessage = 'Failed to create/mint token. ';
+        if (error instanceof Error) {
+          errorMessage += error.message;
+        } else {
+          errorMessage += 'Unknown error occurred.';
+        }
+        alert(errorMessage);
+      })
+      .finally(() => {
+        // Re-enable the button and reset its text
+        submitButton.disabled = false;
+        submitButton.textContent = 'Create/Mint';
+
+        // Clear the form fields
+        nameInput.value = '';
+        symbolInput.value = '';
+        amountInput.value = '';
+      });
+  }
+
+  private closeModal() {
+    if (this.modalElement) {
+      this.modalElement.style.display = 'none';
+    }
+  }
 
   setupUI() {
     this.setupEventListeners();
@@ -35,7 +204,9 @@ export class UIManager {
     document.getElementById('exportKeys')?.addEventListener('click', this.exportKeys.bind(this));
     document.getElementById('importKeys')?.addEventListener('click', this.importKeys.bind(this));
     document.getElementById('connectAppButton')?.addEventListener('click', this.connectApp.bind(this));
-    document.getElementById('createTokensButton')?.addEventListener('click', this.setupTokens.bind(this));
+    document.getElementById('createTokensButton')?.addEventListener('click', () => {
+      this.showCreateMintTokenPopup();
+    });
     
     this.setupTabNavigation();
     this.setAccountSelectionListener();
@@ -49,7 +220,13 @@ export class UIManager {
     try {
       const secretKeyFr = await CryptoUtils.generateSecretKey();
       await this.accountService.createAccount(secretKeyFr);
-      this.updateAccountUI();
+      await this.updateAccountUI();
+      
+      // Get the current wallet and update balances
+      const currentWallet = await this.accountService.getCurrentWallet();
+      if (currentWallet) {
+        await this.tokenService.updateBalancesForNewAccount(currentWallet);
+      }
     } catch (error) {
       console.error('Error during account creation:', error);
     } finally {
@@ -101,30 +278,7 @@ export class UIManager {
     }
   }
 
-  private async setupTokens(event: Event) {
-    event.preventDefault();
-    try {
-      const createTokensButton = document.getElementById('createTokensButton');
-
-      const wallet = await this.accountService.getCurrentWallet();
-      if (wallet) {
-        if (createTokensButton instanceof HTMLButtonElement) {
-          createTokensButton.disabled = true;
-          await this.tokenService.setupTokens(wallet);
-          alert('Tokens have been set up successfully!');
-        } else {
-          console.error('createMintTokensButton is not a button element');
-        }
-      } else {
-        alert('No wallet found. Please create or connect a wallet.');
-      }
-    } catch (error) {
-      console.error('Error setting up tokens:', error);
-      alert('Failed to set up tokens. Please try again.');
-    }
-  }
-
-  public updateTokensTable(tokenRows: { name: string; balance: string; symbol: string }[]) {
+  public updateTokensTable(tokenRows: { name: string; symbol: string; balance: { public: string; private: string } }[]) {
     const tokensTableBody = document.getElementById('tokensTableBody');
     if (!tokensTableBody) {
       console.error('Tokens table body not found');
@@ -142,34 +296,185 @@ export class UIManager {
       nameCell.textContent = `${token.name} (${token.symbol})`;
       row.appendChild(nameCell);
 
-      const sendCell = document.createElement('td');
+      const balanceCell = document.createElement('td');
+      balanceCell.innerHTML = `
+        <div class="balance-container">
+          <div class="balance-item">
+            <span class="balance-label">Public:</span>
+            <span class="balance-value">${token.balance.public}</span>
+          </div>
+          <div class="balance-item">
+            <span class="balance-label">Private:</span>
+            <span class="balance-value">${token.balance.private}</span>
+          </div>
+        </div>
+      `;
+      row.appendChild(balanceCell);
+
+      const actionsCell = document.createElement('td');
+      actionsCell.className = 'actions-cell';
+      
       const sendButton = document.createElement('button');
       sendButton.textContent = 'Send';
+      sendButton.className = 'action-button send-button';
       sendButton.addEventListener('click', () => this.handleSendToken(token));
-      sendCell.appendChild(sendButton);
-      row.appendChild(sendCell);
-
-      const receiveCell = document.createElement('td');
+      
       const receiveButton = document.createElement('button');
       receiveButton.textContent = 'Receive';
+      receiveButton.className = 'action-button receive-button';
       receiveButton.addEventListener('click', () => this.handleReceiveToken(token));
-      receiveCell.appendChild(receiveButton);
-      row.appendChild(receiveCell);
+      
+      actionsCell.appendChild(sendButton);
+      actionsCell.appendChild(receiveButton);
+      row.appendChild(actionsCell);
+
+      const shieldUnshieldCell = document.createElement('td');
+      shieldUnshieldCell.className = 'shield-unshield-cell';
+
+      const shieldButton = document.createElement('button');
+      shieldButton.textContent = 'Shield';
+      shieldButton.className = 'action-button shield-button';
+      shieldButton.addEventListener('click', () => this.handleShieldToken(token));
+
+      const unshieldButton = document.createElement('button');
+      unshieldButton.textContent = 'Unshield';
+      unshieldButton.className = 'action-button unshield-button';
+      unshieldButton.addEventListener('click', () => this.handleUnshieldToken(token));
+
+      shieldUnshieldCell.appendChild(shieldButton);
+      shieldUnshieldCell.appendChild(unshieldButton);
+      row.appendChild(shieldUnshieldCell);
 
       tokensTableBody.appendChild(row);
     });
+
+    // Update CSS for the new layout
+    const style = document.createElement('style');
+    style.textContent = `
+      .balance-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+      }
+      .balance-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        background-color: #2a2a2a;
+        padding: 5px 10px;
+        border-radius: 5px;
+      }
+      .balance-label {
+        font-size: 0.8em;
+        color: #888;
+      }
+      .balance-value {
+        font-weight: bold;
+      }
+      .actions-cell {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .action-button {
+        padding: 5px 10px;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+        transition: background-color 0.3s;
+        width: 100%;
+      }
+      .send-button {
+        background-color: #3498db;
+        color: white;
+      }
+      .send-button:hover {
+        background-color: #2980b9;
+      }
+      .receive-button {
+        background-color: #2ecc71;
+        color: white;
+      }
+      .receive-button:hover {
+        background-color: #27ae60;
+      }
+      .loading-spinner {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #3498db;
+        border-radius: 50%;
+        width: 30px;
+        height: 30px;
+        animation: spin 1s linear infinite;
+        margin: 20px auto;
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      .shield-unshield-cell {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .shield-button {
+        background-color: #9b59b6;
+        color: white;
+      }
+      .shield-button:hover {
+        background-color: #8e44ad;
+      }
+      .unshield-button {
+        background-color: #e67e22;
+        color: white;
+      }
+      .unshield-button:hover {
+        background-color: #d35400;
+      }
+    `;
+    document.head.appendChild(style);
   }
 
-  private handleSendToken(token: { name: string; balance: string; symbol: string }) {
+  private handleSendToken(token: { name: string; symbol: string; balance: { public: string; private: string } }) {
     // Implement send token functionality
     console.log(`Sending ${token.name}`);
     // You might want to open a modal or navigate to a send page here
   }
 
-  private handleReceiveToken(token: { name: string; balance: string; symbol: string }) {
+  private handleReceiveToken(token: { name: string; symbol: string; balance: { public: string; private: string } }) {
     // Implement receive token functionality
     console.log(`Receiving ${token.name}`);
     // You might want to display the user's address or a QR code here
+  }
+
+  private handleShieldToken(token: { name: string; symbol: string; balance: { public: string; private: string } }) {
+    const amount = prompt(`Enter the amount of ${token.symbol} to shield:`);
+    if (amount) {
+      this.tokenService.shieldToken(token, amount)
+        .then(() => {
+          alert(`Successfully shielded ${amount} ${token.symbol}`);
+          this.tokenService.updateTable(); // Refresh the table
+        })
+        .catch(error => {
+          console.error('Error shielding tokens:', error);
+          alert(`Failed to shield tokens: ${error.message}`);
+        });
+    }
+  }
+
+  private handleUnshieldToken(token: { name: string; symbol: string; balance: { public: string; private: string } }) {
+    const amount = prompt(`Enter the amount of ${token.symbol} to unshield:`);
+    if (amount) {
+      this.tokenService.unshieldToken(token, amount)
+        .then(() => {
+          alert(`Successfully unshielded ${amount} ${token.symbol}`);
+          this.tokenService.updateTable(); // Refresh the table
+        })
+        .catch(error => {
+          console.error('Error unshielding tokens:', error);
+          alert(`Failed to unshield tokens: ${error.message}`);
+        });
+    }
   }
 
   private setupTabNavigation() {
@@ -213,10 +518,14 @@ export class UIManager {
 
   private setAccountSelectionListener() {
     const accountSelect = document.getElementById('accountSelect') as HTMLSelectElement;
-    accountSelect.addEventListener('change', (event) => {
+    accountSelect.addEventListener('change', async (event) => {
       const selectedIndex = (event.target as HTMLSelectElement).selectedIndex - 1;
       if (selectedIndex >= 0) {
-        this.accountService.setCurrentAccountIndex(selectedIndex);
+        await this.accountService.setCurrentAccountIndex(selectedIndex);
+        const currentWallet = await this.accountService.getCurrentWallet();
+        if (currentWallet) {
+          await this.tokenService.updateBalancesForNewAccount(currentWallet);
+        }
       }
     });
   }
@@ -275,6 +584,13 @@ export class UIManager {
     } catch (error) {
       console.error('Error displaying pairings:', error);
       pairingList.innerHTML = '<li>Error loading pairings. Please try again later.</li>';
+    }
+  }
+
+  public showLoadingSpinner() {
+    const tokensTableBody = document.getElementById('tokensTableBody');
+    if (tokensTableBody) {
+      tokensTableBody.innerHTML = '<tr><td colspan="3"><div class="loading-spinner"></div></td></tr>';
     }
   }
 }

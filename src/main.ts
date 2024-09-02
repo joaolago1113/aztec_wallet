@@ -18,13 +18,26 @@ const SHIELDSWAP_METADATA = {
 
 async function main() {
   const pxe = await PXEFactory.getPXEInstance();
+  
+  console.log('PXE instance:', pxe);
+  console.log('Available methods:', Object.keys(pxe));
+
+  try {
+    const nodeInfo = await pxe.getNodeInfo();
+    console.log('PXE connection successful. Node info:', nodeInfo);
+  } catch (error) {
+    console.error('Failed to connect to PXE:', error);
+    alert('Failed to connect to the Aztec network. Please check your connection and try again.');
+    return;
+  }
+
   const walletSdk = await WalletSdkFactory.getWalletSdkInstance();
   const keystore = KeystoreFactory.getKeystore();
 
   const uiManager = new UIManager();
 
   const accountService = new AccountService(pxe, keystore, uiManager);
-  const tokenService = new TokenService(pxe, uiManager);
+  const tokenService = new TokenService(pxe, uiManager, accountService);
   const walletConnectService = new WalletConnectService(WALLETCONNECT_PROJECT_ID, SHIELDSWAP_METADATA, accountService, uiManager);
 
   uiManager.setWalletConnectService(walletConnectService);

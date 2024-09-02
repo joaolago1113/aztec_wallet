@@ -20,9 +20,9 @@ export class AccountService {
     if (accountInKeystore) {
       throw new Error('Account already exists in the keystore.');
     } else {
-      this.addAccountToKeystore(account, secretKey);
+      await this.addAccountToKeystore(account, secretKey);
       const accounts = await this.keystore.getAccounts();
-      this.currentAccountIndex = accounts.length - 1;
+      this.currentAccountIndex = accounts.length - 1;  // Set the current index to the newly created account
     }
   }
 
@@ -115,9 +115,9 @@ export class AccountService {
     return accounts.some(account => account.toString() === accountAddress.toString());
   }
 
-  private addAccountToKeystore(account: AccountManager, secretKey: Fr) {
+  private async addAccountToKeystore(account: AccountManager, secretKey: Fr) {
     const partialAddress = computePartialAddress(account.getInstance());
-    this.keystore.addAccount(secretKey, partialAddress);
+    await this.keystore.addAccount(secretKey, partialAddress);
   }
 
   async getSecretKeyKeystore(index: number = this.currentAccountIndex ?? 0): Promise<Fr> {
@@ -135,8 +135,9 @@ export class AccountService {
     return this.currentAccountIndex;
   }
 
-  setCurrentAccountIndex(index: number) {
+  async setCurrentAccountIndex(index: number) {
     this.currentAccountIndex = index;
+    // If you need to perform any asynchronous operations when changing the account, do them here
   }
 
 }
