@@ -237,20 +237,12 @@ export class TokenService {
     const shieldAmount = new Fr(BigInt(amount));
     const shieldSecret = new Fr(BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)));
     const shieldSecretHash = computeSecretHash(shieldSecret);
-    const nonce = new Fr(BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)));
-
-    const refundSecret = new Fr(BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)));
 
     try {
       // Step 1: Shield the tokens
       const tx = await tokenContract.methods
         .shield(this.currentWallet.getAddress(), shieldAmount, shieldSecretHash, 0)
-        .send({
-//          fee: {
-//            gasSettings: GasSettings.default(),
-//            paymentMethod: new PrivateFeePaymentMethod(tokenAddress, tokenAddress, this.currentWallet, refundSecret),
-//          },
-        })
+        .send({})
         .wait();
 
       console.log(`Shielded ${amount} ${token.symbol} tokens. Transaction hash: ${tx.txHash}`);
@@ -294,33 +286,13 @@ export class TokenService {
     const tokenAddress = await this.getTokenAddress(this.currentWallet, token);
     const tokenContract = await TokenContract.at(tokenAddress, this.currentWallet);
     const unshieldAmount = new Fr(BigInt(amount));
-    //const nonce = new Fr(BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)));
-    //const refundSecret = new Fr(BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)));
 
     try {
-      // Create an auth witness for the unshield action
-     
-      /*
-       await this.currentWallet.createAuthWit({
-        caller: tokenContract.address,
-        action: tokenContract.methods.unshield(
-          this.currentWallet.getAddress(),
-          this.currentWallet.getAddress(),
-          unshieldAmount,
-          nonce
-        ),
-      });
-      */
 
       // Perform the unshield transaction
       const tx = await tokenContract.methods
         .unshield(this.currentWallet.getAddress(), this.currentWallet.getAddress(), unshieldAmount, 0)
-        .send({
-        //  fee: {
-        //     gasSettings: GasSettings.default(),
-        //     paymentMethod: new PrivateFeePaymentMethod(tokenAddress, tokenAddress, this.currentWallet, refundSecret),
-        //  },
-        });
+        .send({});
 
       console.log(`Unshielding ${amount} ${token.symbol} tokens. Transaction hash: ${await tx.getTxHash()}`);
       const receipt = await tx.wait();
@@ -332,5 +304,33 @@ export class TokenService {
       console.error('Error unshielding tokens:', error);
       throw error;
     }
+  }
+
+  async sendToken(token: { name: string; symbol: string }, recipient: string, amount: string, isPrivate: boolean) {
+    if (!this.currentWallet) {
+      throw new Error("No wallet available. Please create an account first.");
+    }
+
+    const tokenAddress = await this.getTokenAddress(this.currentWallet, token);
+    const tokenContract = await TokenContract.at(tokenAddress, this.currentWallet);
+
+    let tx;
+    if (isPrivate) {
+      tx = await tokenContract.methods.transfer(AztecAddress.fromString(recipient), BigInt(amount)).send();
+    } else {
+      tx = await tokenContract.methods.transfer_public(this.currentWallet.getAddress(), AztecAddress.fromString(recipient), BigInt(amount), 0).send();
+    }
+
+    await tx.wait();
+    console.log(`Successfully sent ${amount} ${token.symbol} to ${recipient}`);
+    await this.updateTable();
+  }
+
+  async getReceiveAddress(): Promise<string> {
+    if (!this.currentWallet) {
+      throw new Error("No wallet available. Please create an account first.");
+    }
+
+    return this.currentWallet.getAddress().toString();
   }
 }

@@ -4,6 +4,7 @@ import { WalletConnectService } from '../services/WalletConnectService.js';
 import { CryptoUtils } from '../utils/CryptoUtils.js';
 import { Fr } from "@aztec/aztec.js";
 import { AztecAddress } from '@aztec/circuits.js';
+import { TokenContract } from '@aztec/noir-contracts.js';
 
 export class UIManager {
 
@@ -435,16 +436,66 @@ export class UIManager {
     document.head.appendChild(style);
   }
 
-  private handleSendToken(token: { name: string; symbol: string; balance: { public: string; private: string } }) {
-    // Implement send token functionality
-    console.log(`Sending ${token.name}`);
-    // You might want to open a modal or navigate to a send page here
+  private async handleSendToken(token: { name: string; symbol: string; balance: { public: string; private: string } }) {
+    const recipient = prompt(`Enter the recipient's address for ${token.symbol}:`);
+    if (!recipient) return;
+
+    const amount = prompt(`Enter the amount of ${token.symbol} to send:`);
+    if (!amount) return;
+
+    const isPrivate = confirm("Do you want to send from your private balance? Click OK for private, Cancel for public.");
+
+    try {
+      this.showLoadingSpinner();
+      await this.tokenService.sendToken(token, recipient, amount, isPrivate);
+      alert(`Successfully sent ${amount} ${token.symbol} to ${recipient}`);
+    } catch (error) {
+      console.error('Error sending tokens:', error);
+      alert(`Failed to send tokens: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      this.hideLoadingSpinner();
+    }
   }
 
-  private handleReceiveToken(token: { name: string; symbol: string; balance: { public: string; private: string } }) {
-    // Implement receive token functionality
-    console.log(`Receiving ${token.name}`);
-    // You might want to display the user's address or a QR code here
+  private async handleReceiveToken(token: { name: string; symbol: string; balance: { public: string; private: string } }) {
+    try {
+      const address = await this.tokenService.getReceiveAddress();
+      
+      // Create a modal or dialog to display the address
+      const modal = document.createElement('div');
+      modal.style.position = 'fixed';
+      modal.style.left = '50%';
+      modal.style.top = '50%';
+      modal.style.transform = 'translate(-50%, -50%)';
+      modal.style.backgroundColor = '#fff';
+      modal.style.padding = '20px';
+      modal.style.borderRadius = '10px';
+      modal.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.1)';
+      modal.style.zIndex = '1000';
+      modal.style.color = '#000';
+
+      modal.innerHTML = `
+        <h3>Your ${token.symbol} Receiving Address</h3>
+        <p>${address}</p>
+        <button id="copyAddress">Copy Address</button>
+        <button id="closeModal">Close</button>
+      `;
+
+      document.body.appendChild(modal);
+
+      document.getElementById('copyAddress')?.addEventListener('click', () => {
+        navigator.clipboard.writeText(address).then(() => {
+          alert('Address copied to clipboard!');
+        });
+      });
+
+      document.getElementById('closeModal')?.addEventListener('click', () => {
+        document.body.removeChild(modal);
+      });
+    } catch (error) {
+      console.error('Error displaying receive address:', error);
+      alert(`Failed to display receive address: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private handleShieldToken(token: { name: string; symbol: string; balance: { public: string; private: string } }) {
@@ -592,5 +643,9 @@ export class UIManager {
     if (tokensTableBody) {
       tokensTableBody.innerHTML = '<tr><td colspan="3"><div class="loading-spinner"></div></td></tr>';
     }
+  }
+
+  public hideLoadingSpinner() {
+    this.tokenService.updateTable();
   }
 }
