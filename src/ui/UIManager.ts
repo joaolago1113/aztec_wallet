@@ -111,7 +111,6 @@ export class UIManager {
         if (createTokensButton instanceof HTMLButtonElement) {
           createTokensButton.disabled = true;
           await this.tokenService.setupTokens(wallet);
-          createTokensButton.disabled = false;
           alert('Tokens have been set up successfully!');
         } else {
           console.error('createMintTokensButton is not a button element');
