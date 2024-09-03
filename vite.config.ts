@@ -14,24 +14,33 @@ export default defineConfig({
             )
             : undefined,
         nodePolyfills(),
-    ].filter(Boolean),  // Filter out undefined plugins in development
+    ].filter(Boolean),
     build: {
         target: "esnext",
-        sourcemap: true,  // Enable source maps
-        minify: false,  // Disable minification in development
+        sourcemap: true,
+        minify: false,
+        rollupOptions: {
+            input: {
+                main: 'index.html',
+                transactions: 'transactions.html',
+                bridge: 'bridge.html',
+                apps: 'apps.html',
+                tokens: 'tokens.html',
+            },
+        },
     },
-    base: '/',  // Ensure the base path is correct
+    base: '/',
     optimizeDeps: {
-        include: ['@aztec/bb.js'],  // Explicitly include your dependencies
+        include: ['@aztec/bb.js'],
         esbuildOptions: {
             target: "esnext",
-            sourcemap: true,  // Ensure source maps are generated for dependencies
-            minify: false,  // Disable minification in development
+            sourcemap: true,
+            minify: false,
         },
     },
     server: {
         watch: {
-            ignored: ['**/node_modules/**', '**/.git/**'],  // Ignore unnecessary files
+            ignored: ['**/node_modules/**', '**/.git/**'],
         },
     },
 });

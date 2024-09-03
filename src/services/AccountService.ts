@@ -9,7 +9,22 @@ import { UIManager } from '../ui/UIManager.js';
 export class AccountService {
   private currentAccountIndex: number | null = null;
 
-  constructor(private pxe: PXE, private keystore: KeyStore, private uiManager: UIManager) {}
+  constructor(private pxe: PXE, private keystore: KeyStore, private uiManager: UIManager) {
+    this.loadCurrentAccountIndex();
+  }
+
+  private loadCurrentAccountIndex() {
+    const storedIndex = localStorage.getItem('currentAccountIndex');
+    this.currentAccountIndex = storedIndex ? parseInt(storedIndex, 10) : null;
+  }
+
+  private saveCurrentAccountIndex() {
+    if (this.currentAccountIndex !== null) {
+      localStorage.setItem('currentAccountIndex', this.currentAccountIndex.toString());
+    } else {
+      localStorage.removeItem('currentAccountIndex');
+    }
+  }
 
   async createAccount(secretKey: Fr) {
     const account: AccountManager = await this.getAccount(secretKey);
@@ -22,7 +37,8 @@ export class AccountService {
     } else {
       await this.addAccountToKeystore(account, secretKey);
       const accounts = await this.keystore.getAccounts();
-      this.currentAccountIndex = accounts.length - 1;  // Set the current index to the newly created account
+      this.currentAccountIndex = accounts.length - 1;
+      this.saveCurrentAccountIndex();
     }
   }
 
@@ -128,16 +144,48 @@ export class AccountService {
   }
 
   async getAccounts(): Promise<Fr[]> {
-    return await this.keystore.getAccounts();
+    await this.validateCurrentAccountIndex();
+    return this.keystore.getAccounts();
   }
 
   getCurrentAccountIndex(): number | null {
     return this.currentAccountIndex;
   }
 
-  async setCurrentAccountIndex(index: number) {
-    this.currentAccountIndex = index;
-    // If you need to perform any asynchronous operations when changing the account, do them here
+  async setCurrentAccountIndex(index: number | null) {
+    if (index === null) {
+      this.currentAccountIndex = null;
+      this.saveCurrentAccountIndex();
+    } else {
+      const accounts = await this.keystore.getAccounts();
+      if (index >= 0 && index < accounts.length) {
+        this.currentAccountIndex = index;
+        this.saveCurrentAccountIndex();
+      } else {
+        console.error('Invalid account index');
+      }
+    }
   }
 
+  async removeAccount(index: number) {
+    const accounts = await this.keystore.getAccounts();
+    const accountAddress = accounts[index];
+    await this.keystore.removeAccount(accountAddress);
+    
+    if (this.currentAccountIndex === index) {
+      this.currentAccountIndex = accounts.length > 1 ? 0 : null;
+      this.saveCurrentAccountIndex();
+    } else if (this.currentAccountIndex !== null && this.currentAccountIndex > index) {
+      this.currentAccountIndex--;
+      this.saveCurrentAccountIndex();
+    }
+  }
+
+  private async validateCurrentAccountIndex() {
+    const accounts = await this.keystore.getAccounts();
+    if (this.currentAccountIndex === null || this.currentAccountIndex >= accounts.length) {
+      this.currentAccountIndex = accounts.length > 0 ? 0 : null;
+      this.saveCurrentAccountIndex();
+    }
+  }
 }

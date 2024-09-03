@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aztec Wallet UI - Apps</title>
+  <link rel="stylesheet" href="src/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="/aztec.png" type="image/png">
+</head>
+<body>
+  <main>
+    <div class="container">
+      <div class="card full-width-card">
+        <div class="card-header">
+          <h3 class="card-title">Connect App</h3>
+          <p class="card-description">Connect to external applications using WalletConnect.</p>
+        </div>
+        <div class="card-content">
+          <form class="form">
+            <div class="form-group">
+              <label for="walletConnectLink">WalletConnect URL</label>
+              <input type="text" id="walletConnectLink" class="input" placeholder="Enter WalletConnect URL here">
+            </div>
+            <button type="button" id="connectAppButton" class="button primary-button">Connect</button>
+          </form>
+          <div id="pairingList" class="pairing-list"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

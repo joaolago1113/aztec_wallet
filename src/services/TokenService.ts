@@ -1,4 +1,4 @@
-import { AccountWallet, Fr, AztecAddress, PrivateFeePaymentMethod, computeSecretHash, Note, ExtendedNote, TxHash } from "@aztec/aztec.js";
+import { AccountWallet, Fr, AztecAddress, ContractInstanceWithAddress, computeSecretHash, Note, ExtendedNote, TxHash } from "@aztec/aztec.js";
 import { TokenContract } from '@aztec/noir-contracts.js';
 import { PXE } from '@aztec/circuit-types';
 import { GasSettings } from '@aztec/circuits.js';
@@ -9,13 +9,50 @@ export class TokenService {
   private tokensSetup: boolean = false;
   private currentWallet: AccountWallet | null = null;
   private tokens: { name: string; symbol: string }[] = [];
-  private registeredContracts: Map<string, AztecAddress> = new Map();
+  private registeredContracts: Map<string, string> = new Map();
+  private isUpdating: boolean = false;
+  private updateTableDebounceTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private pxe: PXE,
     private uiManager: UIManager,
     private accountService: AccountService
-  ) {}
+  ) {
+    this.loadTokensFromLocalStorage();
+  }
+
+  private saveTokensToLocalStorage() {
+    localStorage.setItem('tokens', JSON.stringify(this.tokens));
+    localStorage.setItem('registeredContracts', JSON.stringify(Array.from(this.registeredContracts.entries())));
+  }
+
+  private loadTokensFromLocalStorage() {
+    try {
+      const storedTokens = localStorage.getItem('tokens');
+      if (storedTokens) {
+        this.tokens = JSON.parse(storedTokens);
+      }
+
+      const storedContracts = localStorage.getItem('registeredContracts');
+      if (storedContracts) {
+        const parsedContracts = JSON.parse(storedContracts);
+        this.registeredContracts = new Map(parsedContracts);
+      }
+    } catch (error) {
+      console.error('Error loading tokens from localStorage:', error);
+      // Reset tokens and registeredContracts if there's an error
+      this.tokens = [];
+      this.registeredContracts = new Map();
+    }
+  }
+
+  private addToken(token: { name: string; symbol: string }) {
+    const existingToken = this.tokens.find(t => t.name === token.name && t.symbol === token.symbol);
+    if (!existingToken) {
+      this.tokens.push(token);
+      this.saveTokensToLocalStorage();
+    }
+  }
 
   async setupToken(wallet: AccountWallet, token: {name: string, symbol: string}): Promise<{ contract: TokenContract, address: AztecAddress }> {
     try {
@@ -52,7 +89,8 @@ export class TokenService {
       }
       
       const key = `${token.name}-${token.symbol}`;
-      this.registeredContracts.set(key, address);
+      this.registeredContracts.set(key, address.toString());
+      this.addToken(token);
       return { contract, address };
     } catch (error) {
       console.error('Detailed error in setupToken:', error);
@@ -64,42 +102,71 @@ export class TokenService {
   }
 
   async updateTable() {
-    if (!this.currentWallet) {
-      console.error("No wallet set. Please call setupTokens first.");
-      return;
+    if (this.updateTableDebounceTimer) {
+      clearTimeout(this.updateTableDebounceTimer);
     }
 
-    // Show loading spinner
-    this.uiManager.showLoadingSpinner();
+    this.updateTableDebounceTimer = setTimeout(async () => {
+      console.log("Entering updateTable method");
+      if (this.isUpdating) {
+        console.log("Update already in progress, skipping");
+        return;
+      }
 
-    try {
-      const tokenRows = await Promise.all(this.tokens.map(async (token) => {
-        try {
-          const tokenAddress = await this.getTokenAddress(this.currentWallet!, token);
-          const tokenContract = await TokenContract.at(tokenAddress, this.currentWallet!);
-          const privateBalance = await tokenContract.methods.balance_of_private(this.currentWallet!.getAddress()).simulate();
-          const publicBalance = await tokenContract.methods.balance_of_public(this.currentWallet!.getAddress()).simulate();
+      if (!this.currentWallet) {
+        console.warn("No wallet set. Please call setupTokens first.");
+        return;
+      }
 
-          return {
-            name: token.name,
-            symbol: token.symbol,
-            balance: {
-              private: privateBalance.toString(),
-              public: publicBalance.toString()
-            }
-          };
-        } catch (error) {
-          console.error(`Error processing token ${token.symbol}:`, error);
-          return null;
-        }
-      }));
+      // Check if we're on the Tokens page
+      if (!document.getElementById('tokensTableBody')) {
+        console.debug("Not on Tokens page, skipping table update.");
+        return;
+      }
 
-      const validTokenRows = tokenRows.filter((row): row is NonNullable<typeof row> => row !== null);
-      this.uiManager.updateTokensTable(validTokenRows);
-    } catch (error) {
-      console.error('Error updating token table:', error);
-      // Optionally, show an error message to the user
-    }
+      this.isUpdating = true;
+      // Show loading spinner
+      this.uiManager.showLoadingSpinner();
+
+      try {
+        console.log("Processing tokens:", this.tokens);
+        const tokenRows = await Promise.all(this.tokens.map(async (token) => {
+          try {
+            console.log(`Processing token: ${token.name} (${token.symbol})`);
+            const tokenAddress = await this.getTokenAddress(this.currentWallet!, token);
+            console.log(`Token address: ${tokenAddress.toString()}`);
+            const tokenContract = await TokenContract.at(tokenAddress, this.currentWallet!);
+            const privateBalance = await tokenContract.methods.balance_of_private(this.currentWallet!.getAddress()).simulate();
+            const publicBalance = await tokenContract.methods.balance_of_public(this.currentWallet!.getAddress()).simulate();
+
+            console.log(`Balances for ${token.symbol}: Private=${privateBalance}, Public=${publicBalance}`);
+            return {
+              name: token.name,
+              symbol: token.symbol,
+              balance: {
+                private: privateBalance.toString(),
+                public: publicBalance.toString()
+              }
+            };
+          } catch (error) {
+            console.error(`Error processing token ${token.symbol}:`, error);
+            return null;
+          }
+        }));
+
+        const validTokenRows = tokenRows.filter((row): row is NonNullable<typeof row> => row !== null);
+        console.log("Valid token rows:", validTokenRows);
+        this.uiManager.updateTokensTable(validTokenRows);
+        this.saveTokensToLocalStorage();
+      } catch (error) {
+        console.error('Error updating token table:', error);
+      } finally {
+        // Hide loading spinner
+        this.uiManager.hideLoadingSpinner();
+        this.isUpdating = false;
+      }
+      console.log("Exiting updateTable method");
+    }, 300); // Adjust the delay as needed
   }
 
   // Add this new method
@@ -111,18 +178,44 @@ export class TokenService {
   private async getTokenAddress(wallet: AccountWallet, token: {name: string, symbol: string}): Promise<AztecAddress> {
     const key = `${token.name}-${token.symbol}`;
     if (this.registeredContracts.has(key)) {
-      return this.registeredContracts.get(key)!;
+      const address = AztecAddress.fromString(this.registeredContracts.get(key)!);
+      try {
+        await this.ensureContractRegistered(wallet, address);
+        return address;
+      } catch (error) {
+        console.log(`Failed to register existing contract. Attempting to redeploy...`);
+        return this.redeployToken(wallet, token);
+      }
     }
 
-    const deploy = TokenContract.deploy(wallet, wallet.getAddress(), token.name, token.symbol, 18);
-    const deployOpts = { contractAddressSalt: new Fr(BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER))), universalDeploy: true };
-    const address = deploy.getInstance(deployOpts).address;
+    return this.redeployToken(wallet, token);
+  }
 
-    // Register the contract
-    await this.registerContract(wallet, address);
-
-    this.registeredContracts.set(key, address);
+  private async redeployToken(wallet: AccountWallet, token: {name: string, symbol: string}): Promise<AztecAddress> {
+    const { contract, address } = await this.setupToken(wallet, token);
+    this.registeredContracts.set(`${token.name}-${token.symbol}`, address.toString());
+    this.saveTokensToLocalStorage();
     return address;
+  }
+
+  private async ensureContractRegistered(wallet: AccountWallet, address: AztecAddress) {
+    try {
+      await TokenContract.at(address, wallet);
+    } catch (error) {
+      console.log(`Contract at ${address.toString()} not registered, attempting to register...`);
+      await this.registerContract(wallet, address);
+    }
+  }
+
+  private async registerContract(wallet: AccountWallet, address: AztecAddress) {
+    try {
+      const contractInstance = await TokenContract.at(address, wallet);
+      await wallet.registerContract(contractInstance);
+      console.log(`Successfully registered contract at ${address.toString()}`);
+    } catch (error) {
+      console.error(`Failed to register contract at ${address.toString()}:`, error);
+      throw error;
+    }
   }
 
   async getBalances(address: AztecAddress): Promise<{ [symbol: string]: { privateBalance: bigint; publicBalance: bigint } }> {
@@ -215,16 +308,6 @@ export class TokenService {
 
   showCreateMintTokenUI() {
     this.uiManager.showCreateMintTokenPopup();
-  }
-
-  private async registerContract(wallet: AccountWallet, address: AztecAddress): Promise<void> {
-    try {
-      await TokenContract.at(address, wallet);
-      console.log(`Contract at ${address.toString()} registered successfully`);
-    } catch (error) {
-      console.error(`Failed to register contract at ${address.toString()}:`, error);
-      throw error;
-    }
   }
 
   async shieldToken(token: { name: string; symbol: string }, amount: string) {
@@ -332,5 +415,13 @@ export class TokenService {
     }
 
     return this.currentWallet.getAddress().toString();
+  }
+
+  resetTokens() {
+    this.tokens = [];
+    this.currentWallet = null;
+    this.registeredContracts.clear();
+    localStorage.removeItem('tokens');
+    localStorage.removeItem('registeredContracts');
   }
 }

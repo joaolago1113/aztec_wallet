@@ -5,244 +5,67 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Aztec Wallet UI</title>
   <link rel="stylesheet" href="src/style.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-
-  <style>
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      margin: 0;
-      padding: 0;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 100vh;
-      background-color: #1a1a1a;
-      color: #e0e0e0;
-    }
-
-    #app {
-      background-color: #2c2c2c;
-      border-radius: 12px;
-      padding: 30px;
-      text-align: center;
-      width: 600px;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-    }
-
-    h1 {
-      font-size: 32px;
-      margin-bottom: 24px;
-      color: #ffffff;
-    }
-
-    h2 {
-      font-size: 24px;
-      margin-top: 30px;
-      margin-bottom: 15px;
-      color: #ffffff;
-    }
-
-    button {
-      border: none;
-      padding: 12px 20px;
-      margin: 12px 0;
-      cursor: pointer;
-      border-radius: 6px;
-      font-size: 16px;
-      width: 100%;
-      box-sizing: border-box;
-      background-color: #4a4a4a;
-      color: #ffffff;
-      transition: background-color 0.3s;
-    }
-
-    button:hover {
-      background-color: #5a5a5a;
-    }
-
-    #walletConnectLink {
-      padding: 12px;
-      font-size: 16px;
-      border-radius: 6px;
-      width: calc(100% - 24px);
-      box-sizing: border-box;
-      margin-bottom: 15px;
-      border: 1px solid #4a4a4a;
-      background-color: #3a3a3a;
-      color: #e0e0e0;
-    }
-
-    #accountInfo {
-      margin-top: 20px;
-      font-size: 14px;
-      word-wrap: break-word;
-      background-color: #3a3a3a;
-      padding: 10px;
-      border-radius: 6px;
-    }
-
-    .tab {
-      display: none;
-    }
-
-    .tab.active {
-      display: block;
-    }
-
-    select {
-      width: 100%;
-      padding: 12px;
-      margin-top: 15px;
-      font-size: 16px;
-      border-radius: 6px;
-      border: 1px solid #4a4a4a;
-      box-sizing: border-box;
-      background-color: #3a3a3a;
-      color: #e0e0e0;
-    }
-
-    #accountContainer {
-      display: flex;
-      align-items: center; /* Change back to center */
-      margin-bottom: 20px;
-    }
-
-    #accountSelect {
-      flex-grow: 1;
-      margin-right: 10px;
-      margin-top: 0;
-    }
-
-    #copyAddressButton {
-      background: none;
-      border: none;
-      cursor: pointer;
-      font-size: 20px;
-      padding: 0;
-      width: 48px;
-      height: 100%; /* Match height to the select element */
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      color: #7289da;
-      transition: color 0.3s;
-      margin-top: 0;
-    }
-
-    #copyAddressButton i {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 100%;
-      height: 100%;
-      padding-bottom: 2px; /* Fine-tune vertical alignment */
-    }
-
-    .nav-buttons {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 20px;
-    }
-
-    .nav-buttons button {
-      width: 48%;
-      background-color: #7289da;
-    }
-
-    .nav-buttons button:hover {
-      background-color: #5b6eae;
-    }
-
-    #tokensTable {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-    }
-
-    #tokensTable th, #tokensTable td {
-      border: 1px solid #4a4a4a;
-      padding: 12px;
-      text-align: left;
-    }
-
-    #tokensTable th {
-      background-color: #3a3a3a;
-      font-weight: bold;
-    }
-
-    #createTokensButton {
-      background-color: #43b581;
-    }
-
-    #createTokensButton:hover {
-      background-color: #3ca374;
-    }
-
-    button:disabled {
-      background-color: #3a3a3a;
-      color: #808080;
-      cursor: not-allowed;
-    }
-
-    button:disabled:hover {
-      background-color: #3a3a3a;
-    }
-  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="/aztec.png" type="image/png">
 </head>
 <body>
   <div id="app">
-    <h1>Aztec Wallet</h1>
-    <!-- Account Selection Dropdown -->
-    <div id="accountContainer">
-      <select id="accountSelect">
-        <option value="" disabled selected>Select an account</option>
-      </select>
-      <button id="copyAddressButton" title="Copy address">
-        <i class="fas fa-clipboard"></i>
-      </button>
-    </div>
-
-    <div class="nav-buttons">
-      <button id="tab1Button">Home</button>
-      <button id="tab2Button">Connect App</button>
-    </div>
-
-    <!-- Create Account Form -->
-    <div id="tab1" class="tab active">
-      <form id="accountForm">
-        <button type="submit">Create New Account</button>
-      </form>
-      <button id="exportKeys">Export Keys</button>
-      <button id="importKeys">Import Keys</button>
-    </div>
-
-    <!-- WalletConnect URL Input -->
-    <div id="tab2" class="tab">
-      <input type="text" id="walletConnectLink" placeholder="Enter WalletConnect URL here">
-      <button id="connectAppButton">Connect</button>
-      <div id="pairingList"></div>
-    </div>
-
-    <!-- Tokens Table -->
-    <h2>My Tokens</h2>
-    <table id="tokensTable">
-      <thead>
-        <tr>
-          <th>Token Name</th>
-          <th>Balance</th>
-          <th>Transfer</th>
-        </tr>
-      </thead>
-      <tbody id="tokensTableBody">
-        <!-- Tokens will be dynamically added here -->
-      </tbody>
-    </table>
-
-    <!-- Create/Mint Tokens Button -->
-    <button id="createTokensButton">Create/Mint Tokens</button>
-    
-    <!-- Account Information Display -->
-    <div id="accountInfo"></div>
+    <header></header>
+    <main id="content">
+      <div class="grid">
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Account Selection</h3>
+            <p class="card-description">Choose an account to interact with.</p>
+          </div>
+          <div class="card-content">
+            <div id="accountContainer">
+              <select id="accountSelect" class="select">
+                <option value="" disabled selected>Select an account</option>
+              </select>
+              <button id="copyAddressButton" class="button icon-button" title="Copy address">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Create Account</h3>
+            <p class="card-description">Generate a new Aztec account and start using the Aztec protocol.</p>
+          </div>
+          <div class="card-content">
+            <form id="accountForm" class="form">
+              <button type="submit" class="button primary-button">Create New Account</button>
+            </form>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Export Keys</h3>
+            <p class="card-description">Export your account keys for backup purposes.</p>
+          </div>
+          <div class="card-content">
+            <button id="exportKeys" class="button secondary-button">Export Keys</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">Import Account</h3>
+            <p class="card-description">Import an existing Aztec account using your private key.</p>
+          </div>
+          <div class="card-content">
+            <button id="importKeys" class="button secondary-button">Import Keys</button>
+          </div>
+        </div>
+      </div>
+    </main>
+    <footer></footer>
   </div>
 
   <script type="module" src="/src/main.ts"></script>

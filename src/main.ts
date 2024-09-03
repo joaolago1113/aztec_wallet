@@ -6,6 +6,8 @@ import { AccountService } from './services/AccountService.js';
 import { TokenService } from './services/TokenService.js';
 import { WalletConnectService } from './services/WalletConnectService.js';
 import { UIManager } from './ui/UIManager.js';
+import { renderHeader } from './components/Header.js';
+import { renderFooter } from './components/Footer.js';
 
 const WALLETCONNECT_PROJECT_ID = "9c949a62a5bde2de36fcd8485d568064";
 
@@ -15,6 +17,8 @@ const SHIELDSWAP_METADATA = {
   url: "http://localhost:5173",
   icons: [],
 };
+
+let uiManager: UIManager;
 
 async function main() {
   const pxe = await PXEFactory.getPXEInstance();
@@ -34,7 +38,7 @@ async function main() {
   const walletSdk = await WalletSdkFactory.getWalletSdkInstance();
   const keystore = KeystoreFactory.getKeystore();
 
-  const uiManager = new UIManager();
+  uiManager = new UIManager();
 
   const accountService = new AccountService(pxe, keystore, uiManager);
   const tokenService = new TokenService(pxe, uiManager, accountService);
@@ -44,6 +48,52 @@ async function main() {
   uiManager.setAccountService(accountService);
   uiManager.setTokenService(tokenService);
   uiManager.setupUI();
+
+  // Render the header and footer components
+  const headerElement = document.querySelector('header');
+  const footerElement = document.querySelector('footer');
+
+  if (headerElement) {
+    headerElement.innerHTML = await renderHeader();
+  }
+
+  if (footerElement) {
+    footerElement.innerHTML = await renderFooter();
+  }
+
+  // Add event listener for navigation
+  window.addEventListener('hashchange', () => {
+    renderPage();
+  });
+
+  // Initial page render
+  renderPage();
+}
+
+async function renderPage() {
+  const hash = window.location.hash.slice(1) || 'accounts'; // Default to 'accounts' if hash is empty
+  const contentElement = document.getElementById('content');
+
+  if (contentElement) {
+    try {
+      const response = await fetch(`${hash}.html`);
+      const html = await response.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const mainContent = doc.querySelector('main');
+
+      if (mainContent) {
+        contentElement.innerHTML = mainContent.innerHTML;
+        // Call the UIManager method directly
+        uiManager.debouncedHandlePageChange();
+      } else {
+        contentElement.innerHTML = '<h2>Page not found</h2>';
+      }
+    } catch (error) {
+      console.error(`Failed to load page: ${hash}`, error);
+      contentElement.innerHTML = '<h2>Page not found</h2>';
+    }
+  }
 }
 
 main().catch(console.error);

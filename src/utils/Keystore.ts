@@ -19,26 +19,26 @@ import {
 import { poseidon2HashWithSeparator } from '@aztec/foundation/crypto';
 import { type Bufferable, serializeToBuffer } from '@aztec/foundation/serialize';
 
-
-
-/**
- * Used for managing keys. Can hold keys of multiple accounts and allows for key rotation.
- */
 export class KeyStore {
-  #keys = new Map();
+  #keys = new Map<string, Buffer>();
 
-  /**
-   * Creates a new account from a randomly generated secret key.
-   * @returns A promise that resolves to the newly created account's CompleteAddress.
-   */
-  /*
-  public createAccount(): Promise<CompleteAddress> {
-    const sk = Fr.random();
-    const partialAddress = Fr.random();
-    return this.addAccount(sk, partialAddress);
+  constructor() {
+    this.loadFromLocalStorage();
   }
-  */
- 
+
+  private loadFromLocalStorage() {
+    const storedKeys = localStorage.getItem('keystoreData');
+    if (storedKeys) {
+      const parsedKeys = JSON.parse(storedKeys);
+      this.#keys = new Map(Object.entries(parsedKeys).map(([key, value]) => [key, Buffer.from(value as string, 'base64')]));
+    }
+  }
+
+  private saveToLocalStorage() {
+    const keysObject = Object.fromEntries(Array.from(this.#keys.entries()).map(([key, value]) => [key, value.toString('base64')]));
+    localStorage.setItem('keystoreData', JSON.stringify(keysObject));
+  }
+
   /**
    * Adds an account to the key store from the provided secret key.
    * @param sk - The secret key of the account.
@@ -56,7 +56,6 @@ export class KeyStore {
 
     const publicKeysHash = publicKeys.hash();
     const account = computeAddress(publicKeysHash, partialAddress);
-
 
     // Naming of keys is as follows ${account}-${n/iv/ov/t}${sk/pk}_m
     await this.#keys.set(`${account.toString()}-ivsk_m`, masterIncomingViewingSecretKey.toBuffer());
@@ -85,14 +84,11 @@ export class KeyStore {
     // Save the secret key
     await this.#keys.set(`${account.toString()}-sk_m`, sk.toBuffer());
 
-    // At last, we return the newly derived account address
+    this.saveToLocalStorage();
     return Promise.resolve(new CompleteAddress(account, publicKeys, partialAddress));
   }
 
-
-  //TODO: Altered
   public async getSecretKey(account: AztecAddress): Promise<Fr> {
-
     const secretKeyBuffer = await this.#keys.get(`${account.toString()}-sk_m`);
 
     if (!secretKeyBuffer) {
@@ -103,7 +99,6 @@ export class KeyStore {
     }
     return Promise.resolve(Fr.fromBuffer(secretKeyBuffer));
   }
-
 
   /**
    * Retrieves addresses of accounts stored in the key store.
@@ -343,6 +338,8 @@ export class KeyStore {
     // At last we store npk_m_hash under `account-npk_m_hash` key to be able to obtain address and key prefix
     // using the #getKeyPrefixAndAccount function later on
     await this.#appendValue(`${account.toString()}-npk_m_hash`, newPublicKey.hash());
+
+    this.saveToLocalStorage();
   }
 
   /**
@@ -379,5 +376,14 @@ export class KeyStore {
 
   #calculateNumKeys(buf: Buffer, T: typeof Point | typeof Fq) {
     return buf.byteLength / T.SIZE_IN_BYTES;
+  }
+
+  public async removeAccount(account: AztecAddress): Promise<void> {
+    const allMapKeys = Array.from(this.#keys.keys());
+    const accountKeys = allMapKeys.filter(key => key.startsWith(account.toString()));
+    for (const key of accountKeys) {
+      await this.#keys.delete(key);
+    }
+    this.saveToLocalStorage();
   }
 }
