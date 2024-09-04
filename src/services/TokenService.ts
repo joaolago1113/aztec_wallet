@@ -19,6 +19,7 @@ export class TokenService {
     private accountService: AccountService
   ) {
     this.loadTokensFromLocalStorage();
+    this.ensureUniqueTokens();
   }
 
   private saveTokensToLocalStorage() {
@@ -47,58 +48,48 @@ export class TokenService {
   }
 
   private addToken(token: { name: string; symbol: string }) {
-    const existingToken = this.tokens.find(t => t.name === token.name && t.symbol === token.symbol);
-    if (!existingToken) {
+    const existingTokenIndex = this.tokens.findIndex(t => t.name === token.name && t.symbol === token.symbol);
+    if (existingTokenIndex === -1) {
       this.tokens.push(token);
+    } else {
+      // Update the existing token if needed
+      this.tokens[existingTokenIndex] = token;
+    }
+    this.saveTokensToLocalStorage();
+  }
+
+  private ensureUniqueTokens() {
+    const uniqueTokens = Array.from(
+      new Map(this.tokens.map(token => [`${token.name}-${token.symbol}`, token])).values()
+    );
+    if (uniqueTokens.length !== this.tokens.length) {
+      this.tokens = uniqueTokens;
       this.saveTokensToLocalStorage();
     }
   }
 
   async setupToken(wallet: AccountWallet, token: {name: string, symbol: string}): Promise<{ contract: TokenContract, address: AztecAddress }> {
-    try {
-      const deploy = TokenContract.deploy(wallet, wallet.getAddress(), token.name, token.symbol, 18);
-      const deployOpts = { contractAddressSalt: new Fr(BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER))), universalDeploy: true };
-      const address = deploy.getInstance(deployOpts).address;
-
-      console.log(`Attempting to deploy token contract for ${token.name} (${token.symbol})`);
-      console.log('Deployment options:', deployOpts);
-      console.log('Deployer address:', wallet.getAddress().toString());
-
-      let contract: TokenContract;
-
-      if (await this.pxe.isContractPubliclyDeployed(address)) {
-        console.log(`Token contract at ${address.toString()} already deployed`);
-        await this.registerContract(wallet, address);
-        contract = await TokenContract.at(address, wallet);
-      } else {
-        console.log(`Deploying token contract at ${address.toString()}`);
-        contract = await deploy.send(deployOpts).deployed({ timeout: 120 });
-        console.log(`Token contract successfully deployed at ${address.toString()}`);
-        
-        // Register the contract after deployment
-        await this.registerContract(wallet, address);
-      }
-
-      // Check if the contract is initialized correctly
-      try {
-        const name = await contract.methods.public_get_name();
-        const symbol = await contract.methods.public_get_symbol();
-        console.log(`Deployed token name: ${name}, symbol: ${symbol}`);
-      } catch (error) {
-        console.error('Error checking deployed contract:', error);
-      }
-      
-      const key = `${token.name}-${token.symbol}`;
-      this.registeredContracts.set(key, address.toString());
-      this.addToken(token);
+    const key = `${token.name}-${token.symbol}`;
+    if (this.registeredContracts.has(key)) {
+      const address = AztecAddress.fromString(this.registeredContracts.get(key)!);
+      const contract = await TokenContract.at(address, wallet);
       return { contract, address };
-    } catch (error) {
-      console.error('Detailed error in setupToken:', error);
-      if (error instanceof Error) {
-        console.error('Error stack:', error.stack);
-      }
-      throw error;
     }
+
+    // If the contract doesn't exist, deploy a new one
+    const deploy = TokenContract.deploy(wallet, wallet.getAddress(), token.name, token.symbol, 18);
+    const deployOpts = { contractAddressSalt: new Fr(BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER))), universalDeploy: true };
+    const address = deploy.getInstance(deployOpts).address;
+
+    console.log(`Deploying token contract for ${token.name} (${token.symbol})`);
+    const contract = await deploy.send(deployOpts).deployed({ timeout: 120 });
+    console.log(`Token contract successfully deployed at ${address.toString()}`);
+
+    this.registeredContracts.set(key, address.toString());
+    this.addToken(token);
+    this.saveTokensToLocalStorage();
+
+    return { contract, address };
   }
 
   async updateTable() {
@@ -129,6 +120,7 @@ export class TokenService {
       this.uiManager.showLoadingSpinner();
 
       try {
+        this.ensureUniqueTokens(); // Add this line to ensure unique tokens before processing
         console.log("Processing tokens:", this.tokens);
         const tokenRows = await Promise.all(this.tokens.map(async (token) => {
           try {
@@ -178,24 +170,16 @@ export class TokenService {
   private async getTokenAddress(wallet: AccountWallet, token: {name: string, symbol: string}): Promise<AztecAddress> {
     const key = `${token.name}-${token.symbol}`;
     if (this.registeredContracts.has(key)) {
-      const address = AztecAddress.fromString(this.registeredContracts.get(key)!);
+      const addressString = this.registeredContracts.get(key)!;
       try {
-        await this.ensureContractRegistered(wallet, address);
-        return address;
+        return AztecAddress.fromString(addressString);
       } catch (error) {
-        console.log(`Failed to register existing contract. Attempting to redeploy...`);
-        return this.redeployToken(wallet, token);
+        console.error(`Failed to parse existing contract address. Key: ${key}, Address: ${addressString}`);
+        throw error;
       }
     }
 
-    return this.redeployToken(wallet, token);
-  }
-
-  private async redeployToken(wallet: AccountWallet, token: {name: string, symbol: string}): Promise<AztecAddress> {
-    const { contract, address } = await this.setupToken(wallet, token);
-    this.registeredContracts.set(`${token.name}-${token.symbol}`, address.toString());
-    this.saveTokensToLocalStorage();
-    return address;
+    throw new Error(`Token contract not found for ${token.name} (${token.symbol}). Please deploy the token first.`);
   }
 
   private async ensureContractRegistered(wallet: AccountWallet, address: AztecAddress) {
@@ -267,7 +251,7 @@ export class TokenService {
         // Create new token
         console.log(`Creating new token: ${tokenData.name} (${tokenData.symbol})`);
         const { contract: newToken, address: tokenAddress } = await this.setupToken(this.currentWallet, tokenData);
-        this.tokens.push({ name: tokenData.name, symbol: tokenData.symbol });
+        this.addToken({ name: tokenData.name, symbol: tokenData.symbol });
         console.log(`Attempting to mint ${mintAmountBigInt.toString()} ${tokenData.symbol} tokens`);
         try {
           const tx = await newToken.methods.privately_mint_private_note(mintAmount).send();

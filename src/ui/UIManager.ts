@@ -30,6 +30,9 @@ export class UIManager {
     const hash = window.location.hash.slice(1) || 'accounts'; // Default to 'accounts' if hash is empty
     console.log('Page changed to:', hash);
     
+    // Add this line to initialize account info on every page change
+    await this.initializeAccountInfo();
+    
     switch (hash) {
       case 'accounts':
         await this.updateAccountsPage();
@@ -470,9 +473,9 @@ export class UIManager {
   }
 
   private setupDropdownMenu() {
-    const dropdownMenu = document.querySelector('.dropdown-menu');
-    const avatarButton = document.querySelector('.avatar-button');
-    const dropdownContent = document.querySelector('.dropdown-content');
+    const dropdownMenu = document.getElementById('accountDropdown');
+    const avatarButton = document.getElementById('avatarButton');
+    const dropdownContent = document.getElementById('dropdownContent');
 
     if (dropdownMenu && avatarButton && dropdownContent) {
       let timeoutId: NodeJS.Timeout | null = null;
@@ -488,25 +491,29 @@ export class UIManager {
         }, 300); // Delay before hiding the dropdown
       };
 
-      avatarButton.addEventListener('mouseenter', showDropdown);
+      // Hover functionality
       dropdownMenu.addEventListener('mouseenter', showDropdown);
       dropdownMenu.addEventListener('mouseleave', hideDropdown);
 
-      // Keep the click event listener for mobile devices
+      // Click functionality
       avatarButton.addEventListener('click', (e) => {
         e.stopPropagation();
         dropdownMenu.classList.toggle('active');
       });
 
+      // Close dropdown when clicking outside
       document.addEventListener('click', (e) => {
         if (!dropdownMenu.contains(e.target as Node)) {
           dropdownMenu.classList.remove('active');
         }
       });
 
+      // Prevent dropdown from closing when clicking inside
       dropdownContent.addEventListener('click', (e) => {
         e.stopPropagation();
       });
+    } else {
+      console.error('Dropdown menu elements not found');
     }
   }
 
@@ -569,7 +576,25 @@ export class UIManager {
       });
   }
 
+  private async initializeAccountInfo() {
+    const currentAccountIndex = this.accountService.getCurrentAccountIndex();
+    if (currentAccountIndex !== null) {
+      const accounts = await this.accountService.getAccounts();
+      if (accounts.length > currentAccountIndex) {
+        const currentAccount = accounts[currentAccountIndex];
+        const accountLabel = document.getElementById('accountLabel');
+        const accountAddress = document.getElementById('accountAddress');
+        
+        if (accountLabel && accountAddress) {
+          accountLabel.textContent = `Account ${currentAccountIndex + 1}`;
+          accountAddress.textContent = `(${currentAccount.toString().slice(0, 5)}...${currentAccount.toString().slice(-5)})`;
+        }
+      }
+    }
+  }
+
   setupUI() {
+    this.initializeAccountInfo();
     this.updateAccountUI();
     this.displayPairings();
     this.addCopyClipboard();
