@@ -6,6 +6,7 @@ import { Fr } from "@aztec/aztec.js";
 import { AztecAddress } from '@aztec/circuits.js';
 import { TransactionService } from '../services/TransactionService.js';
 import { TokenContract } from '@aztec/noir-contracts.js';
+import { PXEFactory } from '../factories/PXEFactory.js';
 
 interface SimulationResult {
   isPrivate: boolean;
@@ -95,6 +96,35 @@ export class UIManager {
     console.log('Updating Transactions page');
     await this.transactionService.fetchTransactions();
     this.displayTransactions();
+  }
+
+  private displayTransactions() {
+    const transactionsTableBody = document.getElementById('transactionsTableBody');
+    if (!transactionsTableBody) {
+      console.debug('Transactions table body not found. This is expected if not on the Transactions page.');
+      return;
+    }
+
+    const transactions = this.transactionService.getTransactions();
+    console.log('Displaying transactions:', transactions);
+    transactionsTableBody.innerHTML = '';
+
+    if (transactions.length === 0) {
+      const row = document.createElement('tr');
+      row.innerHTML = '<td colspan="4">No transactions found</td>';
+      transactionsTableBody.appendChild(row);
+    } else {
+      transactions.forEach(transaction => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${transaction.type}</td>
+          <td>${transaction.amount} ${transaction.token}</td>
+          <td>${transaction.status}</td>
+          <td>${new Date(transaction.timestamp).toLocaleString()}</td>
+        `;
+        transactionsTableBody.appendChild(row);
+      });
+    }
   }
 
   private setupDynamicEventListeners() {
@@ -350,21 +380,37 @@ export class UIManager {
       }
 
       const { recipient, amount, isPrivate } = result;
+      const toAddress = AztecAddress.fromString(recipient);
+
+      // Check if the recipient address is registered
+      const isRecipientRegistered = await this.isAddressRegistered(toAddress);
+      if (!isRecipientRegistered) {
+        alert(`The recipient address ${recipient} is not registered. Please ask the recipient to register their address first.`);
+        return;
+      }
+
+      // Show loading indicator
+      this.showLoadingIndicator('Simulating transfer...');
 
       const tokenAddress = await this.tokenService.getTokenAddress(token);
       const tokenContract = await TokenContract.at(tokenAddress, currentWallet);
 
       const fromAddress = currentWallet.getAddress();
-      const toAddress = AztecAddress.fromString(recipient);
       const amountBigInt = BigInt(amount);
 
       // Simulate the chosen transfer type
       const simulation = await this.simulateTransfer(tokenContract, fromAddress, toAddress, amountBigInt, isPrivate);
 
+      // Hide loading indicator
+      this.hideLoadingIndicator();
+
       // Show simulation results to the user
-      const userConfirmed = await this.showTransferSimulation(simulation);
+      const userConfirmed = await this.showTransferSimulation(simulation, fromAddress, toAddress, token);
 
       if (userConfirmed) {
+        // Show loading indicator again
+        this.showLoadingIndicator('Processing transfer...');
+
         let tx;
         if (isPrivate) {
           tx = await tokenContract.methods.transfer(toAddress, amountBigInt).send();
@@ -375,10 +421,19 @@ export class UIManager {
         await tx.wait();
         console.log(`Successfully sent ${amount} ${token.symbol} to ${recipient}`);
         await this.tokenService.updateTable();
+
+        // Hide loading indicator
+        this.hideLoadingIndicator();
+
+        // Show success message
+        this.showSuccessMessage(`Successfully sent ${amount} ${token.symbol} to ${recipient}`);
       } else {
         console.log('Transfer cancelled by user');
       }
     } catch (error) {
+      // Hide loading indicator in case of error
+      this.hideLoadingIndicator();
+
       console.error('Error sending tokens:', error);
       alert(`Failed to send tokens: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -499,7 +554,7 @@ export class UIManager {
     }
   }
 
-  async showTransferSimulation(simulation: SimulationResult): Promise<boolean> {
+  async showTransferSimulation(simulation: SimulationResult, fromAddress: AztecAddress, toAddress: AztecAddress, token: { name: string; symbol: string }): Promise<boolean> {
     return new Promise((resolve) => {
       const modal = document.createElement('div');
       modal.className = 'modal';
@@ -516,21 +571,21 @@ export class UIManager {
             <h3>${simulation.isPrivate ? 'Private' : 'Public'} Transfer</h3>
             <div class="simulation-details">
               <div class="simulation-column">
-                <h4>Your Balance</h4>
-                <p>Before: <span class="balance">${simulation.fromBalanceBefore}</span></p>
-                <p>After: <span class="balance">${simulation.fromBalanceAfter}</span></p>
+                <h4>Your Balance (${fromAddress.toString().slice(0, 6)}...${fromAddress.toString().slice(-4)})</h4>
+                <p>Before: <span class="balance">${simulation.fromBalanceBefore} ${token.symbol}</span></p>
+                <p>After: <span class="balance">${simulation.fromBalanceAfter} ${token.symbol}</span></p>
               </div>
               <div class="simulation-column">
-                <h4>Recipient Balance</h4>
-                <p>Before: <span class="balance">${simulation.toBalanceBefore}</span></p>
-                <p>After: <span class="balance">${simulation.toBalanceAfter}</span></p>
+                <h4>Recipient Balance (${toAddress.toString().slice(0, 6)}...${toAddress.toString().slice(-4)})</h4>
+                <p>Before: <span class="balance">${simulation.toBalanceBefore} ${token.symbol}</span></p>
+                <p>After: <span class="balance">${simulation.toBalanceAfter} ${token.symbol}</span></p>
               </div>
             </div>
             <p class="gas-estimate">Estimated gas: <span>${simulation.gasEstimate}</span></p>
           </div>
           <div class="modal-actions">
             ${simulation.error
-              ? `<button id="proceedAnyway" class="button warning-button">Proceed Anyway</button>`
+              ? `<button id="proceedAnyway" class="button primary-button">Proceed Anyway</button>`
               : `<button id="confirmTransfer" class="button primary-button">Confirm Transfer</button>`
             }
             <button id="cancelTransfer" class="button secondary-button">Cancel</button>
@@ -849,28 +904,6 @@ export class UIManager {
     }, 100); // Adjust this delay as needed
   }
 
-  private displayTransactions() {
-    const transactionsTableBody = document.getElementById('transactionsTableBody');
-    if (!transactionsTableBody) {
-      console.debug('Transactions table body not found. This is expected if not on the Transactions page.');
-      return;
-    }
-
-    const transactions = this.transactionService.getTransactions();
-    transactionsTableBody.innerHTML = '';
-
-    transactions.forEach(transaction => {
-      const row = document.createElement('tr');
-      row.innerHTML = `
-        <td>${transaction.type}</td>
-        <td>${transaction.amount} ${transaction.token}</td>
-        <td>${transaction.status}</td>
-        <td>${new Date(transaction.timestamp).toLocaleString()}</td>
-      `;
-      transactionsTableBody.appendChild(row);
-    });
-  }
-
   private async rotateNullifierKey(event: Event) {
     event.preventDefault();
     const currentAccountIndex = this.accountService.getCurrentAccountIndex();
@@ -890,6 +923,83 @@ export class UIManager {
     } catch (error) {
       console.error('Error rotating nullifier key:', error);
       alert('Failed to rotate nullifier key. Please try again.');
+    }
+  }
+
+  private showLoadingIndicator(message: string) {
+    const loadingOverlay = document.createElement('div');
+    loadingOverlay.id = 'loadingOverlay';
+    loadingOverlay.innerHTML = `
+      <div class="loading-spinner"></div>
+      <p>${message}</p>
+    `;
+    document.body.appendChild(loadingOverlay);
+  }
+
+  private hideLoadingIndicator() {
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    if (loadingOverlay) {
+      document.body.removeChild(loadingOverlay);
+    }
+  }
+
+  private showSuccessMessage(message: string) {
+    const successMessage = document.createElement('div');
+    successMessage.id = 'successMessage';
+    successMessage.innerHTML = `
+      <p>${message}</p>
+    `;
+    document.body.appendChild(successMessage);
+
+    // Remove the success message after 3 seconds
+    setTimeout(() => {
+      const messageElement = document.getElementById('successMessage');
+      if (messageElement) {
+        document.body.removeChild(messageElement);
+      }
+    }, 3000);
+  }
+
+  private async isAddressRegistered(address: AztecAddress): Promise<boolean> {
+    try {
+
+      const pxe = await PXEFactory.getPXEInstance();
+
+
+      pxe.getRegisteredAccount(address);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  async registerAddress(address: AztecAddress) {
+    try {
+
+      const pxe = await PXEFactory.getPXEInstance();
+
+      //TODO: fix this
+      //await pxe.registerRecipient(address);
+      console.log(`Address ${address.toString()} registered successfully.`);
+    } catch (error) {
+      console.error(`Failed to register address ${address.toString()}:`, error);
+      throw error;
+    }
+  }
+
+  async handleRegisterAddress() {
+    const currentWallet = await this.accountService.getCurrentWallet();
+    if (!currentWallet) {
+      alert("No wallet available. Please create an account first.");
+      return;
+    }
+
+    const address = currentWallet.getAddress();
+    try {
+      await this.registerAddress(address);
+      alert(`Your address ${address.toString()} has been registered successfully.`);
+    } catch (error) {
+      alert(`Failed to register your address: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 }

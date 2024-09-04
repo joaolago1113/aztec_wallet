@@ -74,10 +74,11 @@ export class AccountService {
     const taggingSecretKey = await this.keystore.getMasterSecretKey(taggingPublicKey);
 
     //const secretKey = await this.keystore.getSecretKey(accountAddress);
+    const privateKey = await this.keystore.getEcdsaSecretKey(accountAddress);
 
     const address = accountAddress.toString()
 
-    return { incomingViewingSecretKey, outgoingViewingSecretKey, taggingSecretKey, address};
+    return { incomingViewingSecretKey, outgoingViewingSecretKey, taggingSecretKey, address, privateKey};
   }
 
   

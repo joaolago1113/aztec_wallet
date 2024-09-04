@@ -296,7 +296,7 @@ export class TokenService {
         instance: contractInstance.instance, 
         artifact: contractInstance.artifact 
       });
-      
+
       console.log(`Successfully registered contract at ${address.toString()}`);
     } catch (error) {
       console.error(`Failed to register contract at ${address.toString()}:`, error);
@@ -336,7 +336,7 @@ export class TokenService {
 
       console.log('Current wallet address:', this.currentWallet.getAddress().toString());
 
-      const existingToken = this.tokens.find(t => t.symbol === tokenData.symbol);
+      const existingToken = this.tokens.find(t => t.symbol === tokenData.symbol && t.name === tokenData.name);
       console.log('Existing token:', existingToken);
 
       // Convert the amount to a BigInt to ensure precise integer representation
