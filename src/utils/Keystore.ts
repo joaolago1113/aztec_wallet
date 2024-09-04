@@ -81,13 +81,13 @@ export class KeyStore {
     );
     await this.#keys.set(`${account.toString()}-tpk_m_hash`, publicKeys.masterTaggingPublicKey.hash().toBuffer());
 
-    // Save the secret key
-    await this.#keys.set(`${account.toString()}-sk_m`, sk.toBuffer());
+    // await this.#keys.set(`${account.toString()}-sk_m`, sk.toBuffer());
 
     this.saveToLocalStorage();
     return Promise.resolve(new CompleteAddress(account, publicKeys, partialAddress));
   }
 
+/*
   public async getSecretKey(account: AztecAddress): Promise<Fr> {
     const secretKeyBuffer = await this.#keys.get(`${account.toString()}-sk_m`);
 
@@ -99,6 +99,7 @@ export class KeyStore {
     }
     return Promise.resolve(Fr.fromBuffer(secretKeyBuffer));
   }
+*/
 
   /**
    * Retrieves addresses of accounts stored in the key store.

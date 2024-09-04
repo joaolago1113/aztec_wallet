@@ -1,17 +1,56 @@
-import { Fr, AccountManager, AccountWalletWithSecretKey } from "@aztec/aztec.js";
+import { AuthWitnessProvider, AuthWitness, Fr, AccountManager, AccountWallet, NodeInfo, Schnorr } from "@aztec/aztec.js";
 import { EcdsaKAccountContract } from '@aztec/accounts/ecdsa';
-import { computePartialAddress, deriveSigningKey, deriveKeys, CompleteAddress } from '@aztec/circuits.js';
+import { computePartialAddress, deriveSigningKey, deriveKeys, CompleteAddress, AztecAddress } from '@aztec/circuits.js';
 import { PXE } from '@aztec/circuit-types';
 import { KeyStore } from '../utils/Keystore.js';
 import { CryptoUtils } from '../utils/CryptoUtils.js';
 import { UIManager } from '../ui/UIManager.js';
+import { TokenService } from './TokenService.js';
+import { KeyRegistryContract } from '@aztec/noir-contracts.js';
+import { getCanonicalKeyRegistryAddress } from '@aztec/protocol-contracts/key-registry';
+import { DefaultAccountInterface } from '@aztec/accounts/defaults';
+import { derivePublicKeyFromSecretKey } from '@aztec/circuits.js';
+import { Fq, type GrumpkinScalar } from '@aztec/foundation/fields';
+
+class MyAuthWitnessProvider implements AuthWitnessProvider {
+  private privateKey: GrumpkinScalar;
+
+  constructor(privateKey: GrumpkinScalar = Fq.random()) {
+    this.privateKey = privateKey;
+  }
+
+  async createAuthWit(messageHash: Fr | Buffer): Promise<AuthWitness> {
+    const signer = new Schnorr();
+    const signature = signer.constructSignature(messageHash instanceof Buffer ? messageHash : messageHash.toBuffer(), this.privateKey);
+    if(messageHash instanceof Buffer){
+      messageHash = new Fr(messageHash);
+    }
+    return new AuthWitness(messageHash, [...signature.toBuffer()]);
+  }
+}
 
 export class AccountService {
   private currentAccountIndex: number | null = null;
+  private tokenService: TokenService | null = null;
 
   constructor(private pxe: PXE, private keystore: KeyStore, private uiManager: UIManager) {
     this.loadCurrentAccountIndex();
   }
+
+  setTokenService(tokenService: TokenService) {
+    this.tokenService = tokenService;
+  }
+
+  private async initializeDefaultAccountInterface(address: CompleteAddress): Promise<DefaultAccountInterface> {
+    const authWitnessProvider = new MyAuthWitnessProvider();
+    const nodeInfo: NodeInfo = await this.pxe.getNodeInfo();
+  
+    const defaultAccountInterface = new DefaultAccountInterface(authWitnessProvider, address, nodeInfo);
+  
+    console.log('Initialized DefaultAccountInterface:', defaultAccountInterface);
+    return defaultAccountInterface;
+  }
+  
 
   private loadCurrentAccountIndex() {
     const storedIndex = localStorage.getItem('currentAccountIndex');
@@ -28,7 +67,7 @@ export class AccountService {
 
   async createAccount(secretKey: Fr) {
     const account: AccountManager = await this.getAccount(secretKey);
-    const wallet: AccountWalletWithSecretKey = await this.getWallet(account);
+    const wallet: AccountWallet = await this.getWallet(account);
 
     const accountInKeystore = await this.isAccountInKeystore(wallet);
 
@@ -61,26 +100,35 @@ export class AccountService {
     const outgoingViewingSecretKey = await this.keystore.getMasterSecretKey(outgoingViewingPublicKey);
     const taggingSecretKey = await this.keystore.getMasterSecretKey(taggingPublicKey);
 
-    const secretKey = await this.keystore.getSecretKey(accountAddress);
+    //const secretKey = await this.keystore.getSecretKey(accountAddress);
 
     const address = accountAddress.toString()
 
-    return { incomingViewingSecretKey, outgoingViewingSecretKey, taggingSecretKey, secretKey, address};
+    return { incomingViewingSecretKey, outgoingViewingSecretKey, taggingSecretKey, address};
   }
 
-  async getCurrentWallet(): Promise<AccountWalletWithSecretKey | null> {
+  
+  async getCurrentWallet(): Promise<AccountWallet | null> {
     if (this.currentAccountIndex === null) {
       return null;
     }
 
     const accounts = await this.keystore.getAccounts();
     const accountAddress = accounts[this.currentAccountIndex];
-    const secretKey = await this.keystore.getSecretKey(accountAddress);
 
-    const account = await this.getAccount(secretKey);
-    return this.getWallet(account);
+    const registeredAccount: CompleteAddress | undefined = await this.pxe.getRegisteredAccount(accountAddress);
+
+    if (!registeredAccount) {
+      alert("Account not registered");
+      return null;
+    }
+
+    const accountInterface: DefaultAccountInterface = await this.initializeDefaultAccountInterface(registeredAccount);
+
+    const accountWallet = new AccountWallet(this.pxe, accountInterface);
+
+    return accountWallet;
   }
-
 
   async retrieveContractAddress(index?: number): Promise<CompleteAddress | null> {
     const accounts = await this.keystore.getAccounts();
@@ -93,30 +141,24 @@ export class AccountService {
 
     const contractAddress = accounts[this.currentAccountIndex];
 
-    const secretKey = await this.keystore.getSecretKey(contractAddress);
+    const registeredAccount: CompleteAddress | undefined = await this.pxe.getRegisteredAccount(contractAddress);
 
-    const { publicKeys } = deriveKeys(secretKey);
-    
-    const privateKey = deriveSigningKey(secretKey);
+    if (!registeredAccount) {
+      return Promise.resolve(null);
+    }
 
-    const accountContract = new EcdsaKAccountContract(privateKey.toBuffer());
-
-    const account = new AccountManager(this.pxe, secretKey, accountContract, Fr.ONE);
-
-    account.getAccount()
-
-    const partialAddress = computePartialAddress(account.getInstance());
-
-    return Promise.resolve(new CompleteAddress(contractAddress, publicKeys, partialAddress));
+    return Promise.resolve(registeredAccount);
   }
 
   private async getAccount(secretKey: Fr): Promise<AccountManager> {
     const privateKey = CryptoUtils.deriveSigningKey(secretKey);
     const accountContract = new EcdsaKAccountContract(privateKey.toBuffer());
+    this.pxe.getRegisteredAccounts
+
     return new AccountManager(this.pxe, secretKey, accountContract, Fr.ONE);
   }
 
-  private async getWallet(account: AccountManager): Promise<AccountWalletWithSecretKey> {
+  private async getWallet(account: AccountManager): Promise<AccountWallet> {
     const isInit = await this.checkContractInitialization(account);
     return isInit ? await account.register() : await account.waitSetup();
   }
@@ -125,7 +167,7 @@ export class AccountService {
     return this.pxe.isContractInitialized(account.getAddress());
   }
 
-  private async isAccountInKeystore(wallet: AccountWalletWithSecretKey): Promise<boolean> {
+  private async isAccountInKeystore(wallet: AccountWallet): Promise<boolean> {
     const accountAddress = wallet.getCompleteAddress().address;
     const accounts = await this.keystore.getAccounts();
     return accounts.some(account => account.toString() === accountAddress.toString());
@@ -136,12 +178,14 @@ export class AccountService {
     await this.keystore.addAccount(secretKey, partialAddress);
   }
 
+  /*
   async getSecretKeyKeystore(index: number = this.currentAccountIndex ?? 0): Promise<Fr> {
     const accounts = await this.keystore.getAccounts();
     const accountAddress = accounts[index];
   
     return await this.keystore.getSecretKey(accountAddress);
   }
+  */
 
   async getAccounts(): Promise<Fr[]> {
     await this.validateCurrentAccountIndex();
@@ -187,5 +231,51 @@ export class AccountService {
       this.currentAccountIndex = accounts.length > 0 ? 0 : null;
       this.saveCurrentAccountIndex();
     }
+  }
+
+  async getTokens(): Promise<{ name: string; symbol: string }[]> {
+    if (!this.tokenService) {
+      throw new Error("TokenService not set");
+    }
+    return this.tokenService.getTokens();
+  }
+
+  async getTokenAddress(token: { name: string; symbol: string }): Promise<AztecAddress> {
+
+    if (!this.tokenService) {
+      throw new Error("TokenService not set");
+    }
+    return this.tokenService.getTokenAddress(token);
+  }
+
+  async rotateNullifierKey(wallet: AccountWallet) {
+    const currentAccountIndex = this.getCurrentAccountIndex();
+    if (currentAccountIndex === null) {
+      throw new Error('No account selected');
+    }
+
+    const accounts = await this.keystore.getAccounts();
+    const accountAddress = accounts[currentAccountIndex];
+
+    const newSecretKey = await CryptoUtils.generateSecretKey();
+
+    const { masterNullifierSecretKey } = deriveKeys(newSecretKey);
+
+    const newPublicKey = derivePublicKeyFromSecretKey(masterNullifierSecretKey);
+
+    await wallet.rotateNullifierKeys(masterNullifierSecretKey);
+
+    // Update the Keystore
+    await this.keystore.rotateMasterNullifierKey(accountAddress, masterNullifierSecretKey);
+
+    // Update the KeyRegistry
+    const keyRegistry = await KeyRegistryContract.at(getCanonicalKeyRegistryAddress(), wallet);
+    await keyRegistry
+      .withWallet(wallet)
+      .methods.rotate_npk_m(wallet.getAddress(), newPublicKey.toNoirStruct(), Fr.ZERO)
+      .send()
+      .wait();
+
+    console.log('Nullifier key rotated successfully in both Keystore and KeyRegistry');
   }
 }

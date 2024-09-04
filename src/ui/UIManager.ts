@@ -4,12 +4,24 @@ import { WalletConnectService } from '../services/WalletConnectService.js';
 import { CryptoUtils } from '../utils/CryptoUtils.js';
 import { Fr } from "@aztec/aztec.js";
 import { AztecAddress } from '@aztec/circuits.js';
+import { TransactionService } from '../services/TransactionService.js';
 import { TokenContract } from '@aztec/noir-contracts.js';
+
+interface SimulationResult {
+  isPrivate: boolean;
+  fromBalanceBefore: bigint;
+  toBalanceBefore: bigint;
+  fromBalanceAfter: bigint;
+  toBalanceAfter: bigint;
+  gasEstimate: bigint;
+  error?: string;
+}
 
 export class UIManager {
   private accountService!: AccountService;
   private tokenService!: TokenService;
   private walletConnectService!: WalletConnectService;
+  private transactionService!: TransactionService;
   private debounceTimer: NodeJS.Timeout | null = null;
 
   setTokenService(tokenService: TokenService) {
@@ -20,6 +32,9 @@ export class UIManager {
   }
   setWalletConnectService(walletConnectService: WalletConnectService) {
     this.walletConnectService = walletConnectService;
+  }
+  setTransactionService(transactionService: TransactionService) {
+    this.transactionService = transactionService;
   }
 
   constructor() {
@@ -42,6 +57,9 @@ export class UIManager {
         break;
       case 'apps':
         await this.updateAppsPage();
+        break;
+      case 'transactions':
+        await this.updateTransactionsPage();
         break;
       // Add other cases for different pages if needed
     }
@@ -73,6 +91,12 @@ export class UIManager {
     await this.displayPairings();
   }
 
+  private async updateTransactionsPage() {
+    console.log('Updating Transactions page');
+    await this.transactionService.fetchTransactions();
+    this.displayTransactions();
+  }
+
   private setupDynamicEventListeners() {
     document.addEventListener('click', async (event) => {
       const target = event.target as HTMLElement;
@@ -88,6 +112,8 @@ export class UIManager {
         await this.handleLogout();
       } else if (target.matches('#connectAppButton')) {
         await this.handleConnectApp();
+      } else if (target.matches('#rotateNullifierKey')) {
+        await this.rotateNullifierKey(event);
       }
     });
 
@@ -280,7 +306,15 @@ export class UIManager {
       const actionsCell = document.createElement('td');
       actionsCell.className = 'actions-cell';
       
-      ['Send', 'Shield', 'Unshield'].forEach(action => {
+      const sendButton = document.createElement('button');
+      sendButton.textContent = 'Send';
+      sendButton.className = 'action-button send-button';
+      sendButton.addEventListener('click', async () => {
+        await this.handleSendToken(token);
+      });
+      actionsCell.appendChild(sendButton);
+
+      ['Shield', 'Unshield'].forEach(action => {
         const button = document.createElement('button');
         button.textContent = action;
         button.className = `action-button ${action.toLowerCase()}-button`;
@@ -301,32 +335,226 @@ export class UIManager {
     console.log('Tokens table updated');
   }
 
-  private handleSendToken(token: { name: string; symbol: string; balance: { public: string; private: string } }) {
-    const recipient = prompt(`Enter the recipient's address for ${token.symbol}:`);
-    if (!recipient) return;
-
-    const amount = prompt(`Enter the amount of ${token.symbol} to send:`);
-    if (!amount) return;
-
-    const isPrivate = confirm("Do you want to send from your private balance? Click OK for private, Cancel for public.");
+  async handleSendToken(token: { name: string; symbol: string }) {
+    const currentWallet = await this.accountService.getCurrentWallet();
+    if (!currentWallet) {
+      alert("No wallet available. Please create an account first.");
+      return;
+    }
 
     try {
-      this.showLoadingSpinner();
-      this.tokenService.sendToken(token, recipient, amount, isPrivate)
-        .then(() => {
-          alert(`Successfully sent ${amount} ${token.symbol} to ${recipient}`);
-        })
-        .catch(error => {
-          console.error('Error sending tokens:', error);
-          alert(`Failed to send tokens: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        })
-        .finally(() => {
-          this.hideLoadingSpinner();
-        });
+      const result = await this.showSendTokenModal(token);
+      if (!result) {
+        console.log('Transfer cancelled by user');
+        return;
+      }
+
+      const { recipient, amount, isPrivate } = result;
+
+      const tokenAddress = await this.tokenService.getTokenAddress(token);
+      const tokenContract = await TokenContract.at(tokenAddress, currentWallet);
+
+      const fromAddress = currentWallet.getAddress();
+      const toAddress = AztecAddress.fromString(recipient);
+      const amountBigInt = BigInt(amount);
+
+      // Simulate the chosen transfer type
+      const simulation = await this.simulateTransfer(tokenContract, fromAddress, toAddress, amountBigInt, isPrivate);
+
+      // Show simulation results to the user
+      const userConfirmed = await this.showTransferSimulation(simulation);
+
+      if (userConfirmed) {
+        let tx;
+        if (isPrivate) {
+          tx = await tokenContract.methods.transfer(toAddress, amountBigInt).send();
+        } else {
+          tx = await tokenContract.methods.transfer_public(fromAddress, toAddress, amountBigInt, 0).send();
+        }
+
+        await tx.wait();
+        console.log(`Successfully sent ${amount} ${token.symbol} to ${recipient}`);
+        await this.tokenService.updateTable();
+      } else {
+        console.log('Transfer cancelled by user');
+      }
     } catch (error) {
       console.error('Error sending tokens:', error);
       alert(`Failed to send tokens: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  private showSendTokenModal(token: { name: string; symbol: string }): Promise<{ recipient: string; amount: string; isPrivate: boolean } | null> {
+    return new Promise((resolve) => {
+      const modal = document.createElement('div');
+      modal.className = 'modal';
+      modal.innerHTML = `
+        <div class="modal-content">
+          <h2>Send ${token.symbol} Tokens</h2>
+          <form id="sendTokenForm">
+            <div class="form-group">
+              <label for="recipient">Recipient Address:</label>
+              <input class="input" type="text" id="recipient" required>
+            </div>
+            <div class="form-group">
+              <label for="amount">Amount:</label>
+              <input class="input" type="number" id="amount" min="0" step="any" required>
+            </div>
+            <div class="form-group">
+              <label>Transfer Type:</label>
+              <div class="radio-group">
+                <div class="radio-option">
+                  <input type="radio" id="privateTransfer" name="transferType" value="private" checked>
+                  <span class="radio-custom"></span>
+                  <label for="privateTransfer">Private Transfer</label>
+                </div>
+                <div class="radio-option">
+                  <input type="radio" id="publicTransfer" name="transferType" value="public">
+                  <span class="radio-custom"></span>
+                  <label for="publicTransfer">Public Transfer</label>
+                </div>
+              </div>
+            </div>
+            <div class="modal-actions">
+              <button type="submit" id="proceedSend" class="button primary-button">Proceed</button>
+              <button type="button" id="cancelSend" class="button secondary-button">Cancel</button>
+            </div>
+          </form>
+        </div>
+      `;
+
+      document.body.appendChild(modal);
+
+      const form = modal.querySelector('#sendTokenForm') as HTMLFormElement;
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const recipient = (document.getElementById('recipient') as HTMLInputElement).value;
+        const amount = (document.getElementById('amount') as HTMLInputElement).value;
+        const isPrivate = (document.getElementById('privateTransfer') as HTMLInputElement).checked;
+        document.body.removeChild(modal);
+        resolve({ recipient, amount, isPrivate });
+      });
+
+      modal.querySelector('#cancelSend')?.addEventListener('click', () => {
+        document.body.removeChild(modal);
+        resolve(null);
+      });
+    });
+  }
+
+  private async simulateTransfer(
+    tokenContract: TokenContract,
+    fromAddress: AztecAddress,
+    toAddress: AztecAddress,
+    amount: bigint,
+    isPrivate: boolean
+  ): Promise<SimulationResult> {
+    let call;
+    let fromBalance: bigint = BigInt(0);
+    let toBalance: bigint = BigInt(0);
+    let error: string | undefined;
+    let gasEstimate: bigint = BigInt(0);
+
+    try {
+      if (isPrivate) {
+        call = tokenContract.methods.transfer(toAddress, amount);
+        fromBalance = await tokenContract.methods.balance_of_private(fromAddress).simulate();
+        toBalance = await tokenContract.methods.balance_of_private(toAddress).simulate();
+      } else {
+        call = tokenContract.methods.transfer_public(fromAddress, toAddress, amount, 0);
+        fromBalance = await tokenContract.methods.balance_of_public(fromAddress).simulate();
+        toBalance = await tokenContract.methods.balance_of_public(toAddress).simulate();
+      }
+
+      try {
+        const simulationResult = await call.simulate();
+        gasEstimate = simulationResult.gasUsed;
+      } catch (simulationError) {
+        console.error('Simulation error:', simulationError);
+        error = simulationError instanceof Error ? simulationError.message : 'Unknown simulation error';
+      }
+
+      return {
+        isPrivate,
+        fromBalanceBefore: fromBalance,
+        toBalanceBefore: toBalance,
+        fromBalanceAfter: fromBalance - amount,
+        toBalanceAfter: toBalance + amount,
+        gasEstimate,
+        error,
+      };
+    } catch (err) {
+      console.error('Error during transfer simulation:', err);
+      error = err instanceof Error ? err.message : 'An unknown error occurred';
+
+      return {
+        isPrivate,
+        fromBalanceBefore: fromBalance,
+        toBalanceBefore: toBalance,
+        fromBalanceAfter: BigInt(0),
+        toBalanceAfter: BigInt(0),
+        gasEstimate,
+        error,
+      };
+    }
+  }
+
+  async showTransferSimulation(simulation: SimulationResult): Promise<boolean> {
+    return new Promise((resolve) => {
+      const modal = document.createElement('div');
+      modal.className = 'modal';
+      modal.innerHTML = `
+        <div class="modal-content simulation-modal">
+          <h2>Transfer Simulation Results</h2>
+          ${simulation.error 
+            ? `<div class="simulation-error">
+                 <h3>Simulation Error</h3>
+                 <p>${simulation.error}</p>
+               </div>`
+            : ''}
+          <div class="simulation-results">
+            <h3>${simulation.isPrivate ? 'Private' : 'Public'} Transfer</h3>
+            <div class="simulation-details">
+              <div class="simulation-column">
+                <h4>Your Balance</h4>
+                <p>Before: <span class="balance">${simulation.fromBalanceBefore}</span></p>
+                <p>After: <span class="balance">${simulation.fromBalanceAfter}</span></p>
+              </div>
+              <div class="simulation-column">
+                <h4>Recipient Balance</h4>
+                <p>Before: <span class="balance">${simulation.toBalanceBefore}</span></p>
+                <p>After: <span class="balance">${simulation.toBalanceAfter}</span></p>
+              </div>
+            </div>
+            <p class="gas-estimate">Estimated gas: <span>${simulation.gasEstimate}</span></p>
+          </div>
+          <div class="modal-actions">
+            ${simulation.error
+              ? `<button id="proceedAnyway" class="button warning-button">Proceed Anyway</button>`
+              : `<button id="confirmTransfer" class="button primary-button">Confirm Transfer</button>`
+            }
+            <button id="cancelTransfer" class="button secondary-button">Cancel</button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(modal);
+
+      modal.querySelector('#confirmTransfer')?.addEventListener('click', () => {
+        document.body.removeChild(modal);
+        resolve(true);
+      });
+
+      modal.querySelector('#proceedAnyway')?.addEventListener('click', () => {
+        document.body.removeChild(modal);
+        resolve(true);
+      });
+
+      modal.querySelector('#cancelTransfer')?.addEventListener('click', () => {
+        document.body.removeChild(modal);
+        resolve(false);
+      });
+    });
   }
 
   private async handleShieldToken(token: { name: string; symbol: string; balance: { public: string; private: string } }) {
@@ -619,5 +847,49 @@ export class UIManager {
     this.debounceTimer = setTimeout(() => {
       this.handlePageChange();
     }, 100); // Adjust this delay as needed
+  }
+
+  private displayTransactions() {
+    const transactionsTableBody = document.getElementById('transactionsTableBody');
+    if (!transactionsTableBody) {
+      console.debug('Transactions table body not found. This is expected if not on the Transactions page.');
+      return;
+    }
+
+    const transactions = this.transactionService.getTransactions();
+    transactionsTableBody.innerHTML = '';
+
+    transactions.forEach(transaction => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${transaction.type}</td>
+        <td>${transaction.amount} ${transaction.token}</td>
+        <td>${transaction.status}</td>
+        <td>${new Date(transaction.timestamp).toLocaleString()}</td>
+      `;
+      transactionsTableBody.appendChild(row);
+    });
+  }
+
+  private async rotateNullifierKey(event: Event) {
+    event.preventDefault();
+    const currentAccountIndex = this.accountService.getCurrentAccountIndex();
+    if (currentAccountIndex === null) {
+      alert('No account selected. Please select an account first.');
+      return;
+    }
+
+    try {
+      const wallet = await this.accountService.getCurrentWallet();
+      if (!wallet) {
+        throw new Error('No wallet available. Please create an account first.');
+      }
+
+      await this.accountService.rotateNullifierKey(wallet);
+      alert('Nullifier key rotated successfully!');
+    } catch (error) {
+      console.error('Error rotating nullifier key:', error);
+      alert('Failed to rotate nullifier key. Please try again.');
+    }
   }
 }

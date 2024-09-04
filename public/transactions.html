@@ -12,14 +12,26 @@
 </head>
 <body>
   <main>
-    <div class="grid">
-      <div class="card">
+    <div class="container">
+      <div class="card full-width-card">
         <div class="card-header">
           <h3 class="card-title">Transactions</h3>
           <p class="card-description">View your transaction history.</p>
         </div>
         <div class="card-content">
-          <!-- Add transaction history content here -->
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Amount</th>
+                <th>Status</th>
+                <th>Timestamp</th>
+              </tr>
+            </thead>
+            <tbody id="transactionsTableBody">
+              <!-- Transactions will be dynamically added here -->
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
