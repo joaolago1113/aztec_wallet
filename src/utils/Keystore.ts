@@ -18,6 +18,7 @@ import {
 } from '@aztec/circuits.js';
 import { poseidon2HashWithSeparator } from '@aztec/foundation/crypto';
 import { type Bufferable, serializeToBuffer } from '@aztec/foundation/serialize';
+import { CryptoUtils } from './CryptoUtils.js';
 
 export class KeyStore {
   #keys = new Map<string, Buffer>();
@@ -81,12 +82,32 @@ export class KeyStore {
     );
     await this.#keys.set(`${account.toString()}-tpk_m_hash`, publicKeys.masterTaggingPublicKey.hash().toBuffer());
 
-    // await this.#keys.set(`${account.toString()}-sk_m`, sk.toBuffer());
+    const privateKey = CryptoUtils.deriveSigningKey(sk);
+
+    await this.#keys.set(`${account.toString()}-ecdsa_sk`, privateKey.toBuffer());
 
     this.saveToLocalStorage();
     return Promise.resolve(new CompleteAddress(account, publicKeys, partialAddress));
   }
 
+  /**
+   * Retrieves the ECDSA secret key for a given account.
+   * @param account - The AztecAddress of the account.
+   * @returns A Promise that resolves to the ECDSA secret key as a Buffer.
+   * @throws Error if the ECDSA secret key for the account is not found.
+   */
+  public async getEcdsaSecretKey(account: AztecAddress): Promise<Buffer> {
+    const ecdsaSkKey = `${account.toString()}-ecdsa_sk`;
+    const ecdsaSkBuffer = await this.#keys.get(ecdsaSkKey);
+
+    if (!ecdsaSkBuffer) {
+      throw new Error(`ECDSA secret key not found for account ${account.toString()}`);
+    }
+
+    return ecdsaSkBuffer;
+  }
+
+  
 /*
   public async getSecretKey(account: AztecAddress): Promise<Fr> {
     const secretKeyBuffer = await this.#keys.get(`${account.toString()}-sk_m`);

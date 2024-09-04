@@ -101,13 +101,13 @@ export class TransactionService {
     }
   }
 
-  private async getTokenAddresses(currentWallet: AccountWalletWithSecretKey): Promise<AztecAddress[]> {
+  private async getTokenAddresses(): Promise<AztecAddress[]> {
     const tokenAddresses: AztecAddress[] = [];
     const tokens = await this.accountService.getTokens();
 
     for (const token of tokens) {
       try {
-        const tokenAddress = await this.accountService.getTokenAddress(currentWallet, token);
+        const tokenAddress = await this.accountService.getTokenAddress(token);
         tokenAddresses.push(tokenAddress);
       } catch (error) {
         console.error(`Error getting token address for ${token.name} (${token.symbol}):`, error);

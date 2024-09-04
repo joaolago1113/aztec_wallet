@@ -1,4 +1,4 @@
-import { AccountWallet, Fr, AztecAddress, ContractFunctionInteraction, computeSecretHash, Note, ExtendedNote, TxHash } from "@aztec/aztec.js";
+import {  AccountWallet, Fr, AztecAddress, ContractFunctionInteraction, computeSecretHash, Note, ExtendedNote, TxHash } from "@aztec/aztec.js";
 import { TokenContract, TokenContractArtifact } from '@aztec/noir-contracts.js';
 import { PXE } from '@aztec/circuit-types';
 import { GasSettings } from '@aztec/circuits.js';
@@ -107,20 +107,30 @@ export class TokenService {
       console.log('Deploy object created successfully');
 
       console.log('Creating deploy options...');
-      const deployOpts = { contractAddressSalt: new Fr(BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER))) };
+      const deployOpts = { contractAddressSalt: new Fr(BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER))), universalDeploy: true };
       console.log('Deploy options created:', deployOpts);
 
       console.log('Getting instance address...');
       const address = deploy.getInstance(deployOpts).address;
       console.log(`Instance address: ${address.toString()}`);
 
-      console.log('Sending deploy transaction...');
-      const tx = await deploy.send(deployOpts);
-      console.log('Deploy transaction sent. Transaction hash:', await tx.getTxHash());
+      let contract: TokenContract;
 
-      console.log('Waiting for transaction to be mined...');
-      const contract = await tx.deployed({ timeout: 120 });
-      console.log('Contract deployed successfully');
+      if (await this.pxe.isContractPubliclyDeployed(address)) {
+        console.log(`Token contract at ${address.toString()} already deployed`);
+        await this.registerContract(wallet, address);
+        contract = await TokenContract.at(address, wallet);
+      } else {
+        console.log(`Deploying token contract at ${address.toString()}`);
+        const tx = await deploy.send(deployOpts);
+        console.log('Deploy transaction sent. Transaction hash:', await tx.getTxHash());
+        console.log('Waiting for transaction to be mined...');
+        contract = await tx.deployed({ timeout: 120 });
+        console.log(`Token contract successfully deployed at ${address.toString()}`);
+        
+        // Register the contract after deployment
+        await this.registerContract(wallet, address);
+      }
 
       this.registeredContracts.set(key, address.toString());
       this.addToken(token);
@@ -281,7 +291,12 @@ export class TokenService {
   private async registerContract(wallet: AccountWallet, address: AztecAddress) {
     try {
       const contractInstance = await TokenContract.at(address, wallet);
-      await wallet.registerContract(contractInstance);
+
+      await this.pxe.registerContract({
+        instance: contractInstance.instance, 
+        artifact: contractInstance.artifact 
+      });
+      
       console.log(`Successfully registered contract at ${address.toString()}`);
     } catch (error) {
       console.error(`Failed to register contract at ${address.toString()}:`, error);

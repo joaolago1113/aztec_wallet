@@ -10,24 +10,8 @@ import { KeyRegistryContract } from '@aztec/noir-contracts.js';
 import { getCanonicalKeyRegistryAddress } from '@aztec/protocol-contracts/key-registry';
 import { DefaultAccountInterface } from '@aztec/accounts/defaults';
 import { derivePublicKeyFromSecretKey } from '@aztec/circuits.js';
-import { Fq, type GrumpkinScalar } from '@aztec/foundation/fields';
+import { getEcdsaKWallet } from '@aztec/accounts/ecdsa';
 
-class MyAuthWitnessProvider implements AuthWitnessProvider {
-  private privateKey: GrumpkinScalar;
-
-  constructor(privateKey: GrumpkinScalar = Fq.random()) {
-    this.privateKey = privateKey;
-  }
-
-  async createAuthWit(messageHash: Fr | Buffer): Promise<AuthWitness> {
-    const signer = new Schnorr();
-    const signature = signer.constructSignature(messageHash instanceof Buffer ? messageHash : messageHash.toBuffer(), this.privateKey);
-    if(messageHash instanceof Buffer){
-      messageHash = new Fr(messageHash);
-    }
-    return new AuthWitness(messageHash, [...signature.toBuffer()]);
-  }
-}
 
 export class AccountService {
   private currentAccountIndex: number | null = null;
@@ -40,17 +24,6 @@ export class AccountService {
   setTokenService(tokenService: TokenService) {
     this.tokenService = tokenService;
   }
-
-  private async initializeDefaultAccountInterface(address: CompleteAddress): Promise<DefaultAccountInterface> {
-    const authWitnessProvider = new MyAuthWitnessProvider();
-    const nodeInfo: NodeInfo = await this.pxe.getNodeInfo();
-  
-    const defaultAccountInterface = new DefaultAccountInterface(authWitnessProvider, address, nodeInfo);
-  
-    console.log('Initialized DefaultAccountInterface:', defaultAccountInterface);
-    return defaultAccountInterface;
-  }
-  
 
   private loadCurrentAccountIndex() {
     const storedIndex = localStorage.getItem('currentAccountIndex');
@@ -116,18 +89,12 @@ export class AccountService {
     const accounts = await this.keystore.getAccounts();
     const accountAddress = accounts[this.currentAccountIndex];
 
-    const registeredAccount: CompleteAddress | undefined = await this.pxe.getRegisteredAccount(accountAddress);
 
-    if (!registeredAccount) {
-      alert("Account not registered");
-      return null;
-    }
+    const ecdsaSkBuffer = await this.keystore.getEcdsaSecretKey(accountAddress);
+    const ecdsaSk = Fr.fromBuffer(ecdsaSkBuffer);
+    const ecdsaKWallet = getEcdsaKWallet(this.pxe, accountAddress, ecdsaSk.toBuffer());
 
-    const accountInterface: DefaultAccountInterface = await this.initializeDefaultAccountInterface(registeredAccount);
-
-    const accountWallet = new AccountWallet(this.pxe, accountInterface);
-
-    return accountWallet;
+    return ecdsaKWallet;
   }
 
   async retrieveContractAddress(index?: number): Promise<CompleteAddress | null> {
