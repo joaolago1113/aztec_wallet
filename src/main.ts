@@ -101,5 +101,7 @@ async function renderPage() {
     }
   }
 }
-
+ 
+localStorage.clear()
 main().catch(console.error);
+localStorage.clear()

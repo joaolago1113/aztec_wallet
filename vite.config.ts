@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 import resolve from "vite-plugin-resolve";
 
-const aztecVersion = "0.48.0";
+const aztecVersion = "0.52.0";
 
 export default defineConfig({
     plugins: [
@@ -15,6 +15,13 @@ export default defineConfig({
             : undefined,
         nodePolyfills(),
     ].filter(Boolean),
+    resolve: {
+        alias: {
+            'fs/promises': 'node:fs/promises',
+            'fs': 'node:fs',
+            'path': 'node:path',
+        },
+    },
     build: {
         target: "esnext",
         sourcemap: true,
