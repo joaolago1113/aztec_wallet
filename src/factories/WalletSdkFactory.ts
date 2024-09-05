@@ -1,7 +1,8 @@
 import { ShieldswapWalletSdk } from "@shieldswap/wallet-sdk";
 import { PXEFactory } from './PXEFactory.js';
+import { CONFIG } from '../config.js';
 
-const WALLETCONNECT_PROJECT_ID = "9c949a62a5bde2de36fcd8485d568064";
+const WALLETCONNECT_PROJECT_ID = CONFIG.WALLETCONNECT_PROJECT_ID;
 
 export class WalletSdkFactory {
   private static walletSdkInstance: ShieldswapWalletSdk | null = null;

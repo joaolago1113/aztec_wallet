@@ -121,7 +121,6 @@ export class AccountService {
   private async getAccount(secretKey: Fr): Promise<AccountManager> {
     const privateKey = CryptoUtils.deriveSigningKey(secretKey);
     const accountContract = new EcdsaKAccountContract(privateKey.toBuffer());
-    this.pxe.getRegisteredAccounts
 
     return new AccountManager(this.pxe, secretKey, accountContract, Fr.ONE);
   }

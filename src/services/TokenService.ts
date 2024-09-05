@@ -531,5 +531,18 @@ export class TokenService {
     return this.tokens;
   }
 
+  async depositTokens(token: { name: string; symbol: string }, amount: string, isPrivate: boolean) {
+    // Implement the logic for depositing tokens from Ethereum to Aztec
+    // Use the `isPrivate` parameter to determine the claiming mode (private or public)
+    // Interact with the Ethereum and Aztec bridge contracts to perform the deposit
+    // ...
+  }
+
+  async withdrawTokens(token: { name: string; symbol: string }, amount: string, isPrivate: boolean) {
+    // Implement the logic for withdrawing tokens from Aztec to Ethereum
+    // Use the `isPrivate` parameter to determine the claiming mode (private or public)
+    // Interact with the Ethereum and Aztec bridge contracts to perform the withdrawal
+    // ...
+  }
 
 }

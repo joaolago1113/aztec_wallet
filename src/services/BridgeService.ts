@@ -1,0 +1,3 @@
+// Implement the BridgeService to handle the interaction with the Ethereum and Aztec bridge contracts
+// This service can be used by the TokenService to perform the actual bridging operations
+// ...

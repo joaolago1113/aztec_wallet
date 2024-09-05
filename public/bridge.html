@@ -12,14 +12,55 @@
 </head>
 <body>
   <main>
-    <div class="grid">
-      <div class="card">
+    <div class="container">
+      <div class="card full-width-card">
         <div class="card-header">
           <h3 class="card-title">Bridge</h3>
           <p class="card-description">Bridge tokens between Ethereum and Aztec.</p>
         </div>
         <div class="card-content">
-          <!-- Add bridge functionality content here -->
+          <div class="bridge-grid">
+            <div class="bridge-card">
+              <h4>Deposit</h4>
+              <form id="depositForm" class="form">
+                <div class="form-group">
+                  <label for="depositToken" class="label">Token</label>
+                  <select id="depositToken" class="select">
+                    <!-- Token options will be dynamically added here -->
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="depositAmount" class="label">Amount</label>
+                  <input type="number" id="depositAmount" class="input" required min="0">
+                </div>
+                <div class="form-group">
+                  <label for="depositPrivate" class="label">Private Claiming</label>
+                  <input type="checkbox" id="depositPrivate" class="checkbox">
+                </div>
+                <button type="submit" class="button primary-button">Deposit</button>
+              </form>
+            </div>
+            <div class="bridge-card">
+              <h4>Withdraw</h4>
+              <form id="withdrawForm" class="form">
+                <div class="form-group">
+                  <label for="withdrawToken" class="label">Token</label>
+                  <select id="withdrawToken" class="select">
+                    <!-- Token options will be dynamically added here -->
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="withdrawAmount" class="label">Amount</label>
+                  <input type="number" id="withdrawAmount" class="input" required min="0">
+                </div>
+                <div class="form-group">
+                  <label for="withdrawPrivate" class="label">Private Claiming</label>
+                  <input type="checkbox" id="withdrawPrivate" class="checkbox">
+                </div>
+                <button type="submit" class="button primary-button">Withdraw</button>
+              </form>
+            </div>
+          </div>
         </div>
       </div>
     </div>

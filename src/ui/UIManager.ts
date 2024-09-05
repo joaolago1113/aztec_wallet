@@ -62,6 +62,9 @@ export class UIManager {
       case 'transactions':
         await this.updateTransactionsPage();
         break;
+      case 'bridge':
+        await this.updateBridgePage();
+        break;
       // Add other cases for different pages if needed
     }
   }
@@ -96,6 +99,74 @@ export class UIManager {
     console.log('Updating Transactions page');
     await this.transactionService.fetchTransactions();
     this.displayTransactions();
+  }
+
+  private async updateBridgePage() {
+    console.log('Updating Bridge page');
+    await this.populateBridgeTokens();
+    this.setupBridgeEventListeners();
+  }
+
+  private async populateBridgeTokens() {
+    const tokens = await this.accountService.getTokens();
+    const depositTokenSelect = document.getElementById('depositToken') as HTMLSelectElement;
+    const withdrawTokenSelect = document.getElementById('withdrawToken') as HTMLSelectElement;
+
+    if (depositTokenSelect && withdrawTokenSelect) {
+      depositTokenSelect.innerHTML = '';
+      withdrawTokenSelect.innerHTML = '';
+
+      tokens.forEach(token => {
+        const option = document.createElement('option');
+        option.value = `${token.name}:${token.symbol}`;
+        option.text = `${token.name} (${token.symbol})`;
+        depositTokenSelect.add(option);
+        withdrawTokenSelect.add(option.cloneNode(true) as HTMLOptionElement);
+      });
+    }
+  }
+
+  private setupBridgeEventListeners() {
+    const depositForm = document.getElementById('depositForm') as HTMLFormElement;
+    const withdrawForm = document.getElementById('withdrawForm') as HTMLFormElement;
+
+    if (depositForm) {
+      depositForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const depositTokenSelect = document.getElementById('depositToken') as HTMLSelectElement;
+        const depositAmountInput = document.getElementById('depositAmount') as HTMLInputElement;
+        const [name, symbol] = depositTokenSelect.value.split(':');
+        const amount = depositAmountInput.value;
+        await this.handleDeposit({ name, symbol }, amount);
+      });
+    }
+
+    if (withdrawForm) {
+      withdrawForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const withdrawTokenSelect = document.getElementById('withdrawToken') as HTMLSelectElement;
+        const withdrawAmountInput = document.getElementById('withdrawAmount') as HTMLInputElement;
+        const [name, symbol] = withdrawTokenSelect.value.split(':');
+        const amount = withdrawAmountInput.value;
+        await this.handleWithdraw({ name, symbol }, amount);
+      });
+    }
+  }
+
+  private async handleDeposit(token: { name: string; symbol: string }, amount: string) {
+    const isPrivate = document.getElementById('depositPrivate') as HTMLInputElement;
+    await this.tokenService.depositTokens(token, amount, isPrivate.checked);
+    // Implement the logic for depositing tokens from Ethereum to Aztec
+    console.log(`Depositing ${amount} ${token.symbol} from Ethereum to Aztec`);
+    // TODO: Implement the deposit functionality
+  }
+
+  private async handleWithdraw(token: { name: string; symbol: string }, amount: string) {
+    const isPrivate = document.getElementById('withdrawPrivate') as HTMLInputElement;
+    await this.tokenService.withdrawTokens(token, amount, isPrivate.checked);
+    // Implement the logic for withdrawing tokens from Aztec to Ethereum
+    console.log(`Withdrawing ${amount} ${token.symbol} from Aztec to Ethereum`);
+    // TODO: Implement the withdraw functionality
   }
 
   private displayTransactions() {

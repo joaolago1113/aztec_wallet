@@ -1,7 +1,8 @@
 import { PXE } from '@aztec/circuit-types';
 import { createPXEClient, waitForPXE } from "@aztec/aztec.js";
+import { CONFIG } from '../config.js';
 
-const PXE_URL = 'http://localhost:8080';
+const PXE_URL = CONFIG.PXE_URL;
 
 export class PXEFactory {
   private static pxeInstance: PXE | null = null;
