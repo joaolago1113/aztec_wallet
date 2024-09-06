@@ -2,8 +2,10 @@ import { AccountService } from './AccountService.js';
 import { UIManager } from '../ui/UIManager.js';
 import { PXE } from '@aztec/circuit-types';
 import { TokenContract, TokenContractArtifact } from '@aztec/noir-contracts.js';
-import { Contract, AccountWallet } from '@aztec/aztec.js';
+import { L1EventPayload, AccountWallet } from '@aztec/aztec.js';
 import { AztecAddress } from '@aztec/circuits.js';
+import { ExtendedUnencryptedL2Log } from '@aztec/circuit-types';
+import { LogFilter } from '@aztec/circuit-types';
 
 export class TransactionService {
   private transactions: any[] = [];
@@ -91,12 +93,13 @@ export class TransactionService {
         
         const fromBlock = 0;
         const toBlock = await this.pxe.getBlockNumber();
-        const logFilter = {
-          fromBlock,
-          toBlock,
-          contractAddress: tokenAddress,
-          eventSelector: TokenContract.events.Transfer.eventSelector.toString(), // Convert to string
+        const logFilter: LogFilter = {
+          fromBlock: fromBlock,
+          toBlock: toBlock,
+          //contractAddress: tokenAddress,
+          //eventSelector: TokenContract.events.Transfer.eventSelector.toString(), // Convert to string
         };
+
 
         console.log('Fetching public logs with filter:', logFilter);
 
@@ -105,20 +108,29 @@ export class TransactionService {
         console.log(`Found ${logs.logs.length} public logs for token at ${tokenAddress.toString()}`);
 
         const publicTransactions = logs.logs
-          .map((log: any) => {
-            const decodedLog = TokenContract.events.Transfer.decode(log);
-            if (!decodedLog) return null;
+          .map((log: ExtendedUnencryptedL2Log) => {
+            let decodedLog;
+            try {
 
+              console.log('Log:', log.toHumanReadable());
+
+              //decodedLog = TokenContract.events.Transfer.decode(log);
+            } catch (error) {
+              console.error('Error decoding log:', error);
+            }
+           //if (!decodedLog) return null;
+
+           console.log('Decoded log:', decodedLog);
             // Assuming the Transfer event structure is { from, to, amount }
             // Adjust these field names if they're different in the actual event
             return {
-              type: decodedLog.from.equals(currentWallet.getAddress()) ? 'send' : 'receive',
-              amount: decodedLog.amount?.toString() || '0', // Use optional chaining and provide a default
-              token: 'ETH', // Replace with actual token symbol if available
-              status: 'completed',
-              timestamp: log.timestamp,
-              from: decodedLog.from.toString(),
-              to: decodedLog.to.toString(),
+              type: log.toHumanReadable(),//decodedLog.from.equals(currentWallet.getAddress()) ? 'send' : 'receive',
+              amount:'', //decodedLog.amount?.toString() || '0', // Use optional chaining and provide a default
+              token:'', //'ETH', // Replace with actual token symbol if available
+              status: '',//'completed',
+              timestamp: '',//log.timestamp,
+              from: '',//decodedLog.from.toString(),
+              to: '',//decodedLog.to.toString(),
             };
           })
           .filter((tx): tx is NonNullable<typeof tx> => tx !== null);
