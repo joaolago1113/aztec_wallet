@@ -80,7 +80,6 @@ export class AccountService {
 
     return { incomingViewingSecretKey, outgoingViewingSecretKey, taggingSecretKey, address, privateKey};
   }
-
   
   async getCurrentWallet(): Promise<AccountWallet | null> {
     if (this.currentAccountIndex === null) {
@@ -239,7 +238,7 @@ export class AccountService {
     const keyRegistry = await KeyRegistryContract.at(getCanonicalKeyRegistryAddress(), wallet);
     await keyRegistry
       .withWallet(wallet)
-      .methods.rotate_npk_m(wallet.getAddress(), newPublicKey.toNoirStruct(), Fr.ZERO)
+      .methods.rotate_npk_m(wallet.getAddress(), { inner: newPublicKey.toNoirStruct() }, Fr.ZERO)
       .send()
       .wait();
 

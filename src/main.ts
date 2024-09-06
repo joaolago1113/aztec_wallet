@@ -9,15 +9,8 @@ import { UIManager } from './ui/UIManager.js';
 import { renderHeader } from './components/Header.js';
 import { renderFooter } from './components/Footer.js';
 import { TransactionService } from './services/TransactionService.js';
+import { CONFIG } from './config.js';
 
-const WALLETCONNECT_PROJECT_ID = "9c949a62a5bde2de36fcd8485d568064";
-
-const SHIELDSWAP_METADATA = {
-  name: "Aztec Wallet",
-  description: "",
-  url: "http://localhost:5173",
-  icons: [],
-};
 
 let uiManager: UIManager;
 
@@ -44,7 +37,7 @@ async function main() {
   // Create services without circular dependencies
   const accountService = new AccountService(pxe, keystore, uiManager);
   const tokenService = new TokenService(pxe, uiManager, accountService);
-  const walletConnectService = new WalletConnectService(WALLETCONNECT_PROJECT_ID, SHIELDSWAP_METADATA, accountService, uiManager);
+  const walletConnectService = new WalletConnectService(CONFIG.WALLETCONNECT_PROJECT_ID, CONFIG.SDK_METADATA, accountService, uiManager);
   const transactionService = new TransactionService(pxe, uiManager, accountService);
 
   // Set up services after creation
@@ -101,7 +94,5 @@ async function renderPage() {
     }
   }
 }
- 
-localStorage.clear()
+
 main().catch(console.error);
-localStorage.clear()

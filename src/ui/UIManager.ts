@@ -344,7 +344,7 @@ export class UIManager {
         if (disconnectButton) {
           disconnectButton.addEventListener('click', async () => {
             await this.walletConnectService.disconnectPairing(pairing.topic);
-            this.displayPairings(); // Refresh the list after disconnecting
+            pairingItem.remove();
           });
         }
       });
