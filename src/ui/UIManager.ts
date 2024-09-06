@@ -977,23 +977,33 @@ export class UIManager {
 
   private async rotateNullifierKey(event: Event) {
     event.preventDefault();
-    const currentAccountIndex = this.accountService.getCurrentAccountIndex();
-    if (currentAccountIndex === null) {
-      alert('No account selected. Please select an account first.');
-      return;
-    }
-
+    const button = event.target as HTMLButtonElement;
+    const originalText = button.textContent || 'Rotate Nullifier Key';
+    
     try {
+      button.disabled = true;
+      button.textContent = 'Processing...';
+      this.showLoadingIndicator('Rotating Nullifier Key...');
+
+      const currentAccountIndex = this.accountService.getCurrentAccountIndex();
+      if (currentAccountIndex === null) {
+        throw new Error('No account selected. Please select an account first.');
+      }
+
       const wallet = await this.accountService.getCurrentWallet();
       if (!wallet) {
         throw new Error('No wallet available. Please create an account first.');
       }
 
       await this.accountService.rotateNullifierKey(wallet);
-      alert('Nullifier key rotated successfully!');
+      this.showSuccessMessage('Nullifier key rotated successfully!');
     } catch (error) {
       console.error('Error rotating nullifier key:', error);
       alert('Failed to rotate nullifier key. Please try again.');
+    } finally {
+      button.disabled = false;
+      button.textContent = originalText;
+      this.hideLoadingIndicator();
     }
   }
 
