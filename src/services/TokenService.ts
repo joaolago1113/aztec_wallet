@@ -5,6 +5,8 @@ import { GasSettings } from '@aztec/circuits.js';
 import { UIManager } from '../ui/UIManager.js';
 import { AccountService } from '../services/AccountService.js';
 
+
+
 export class TokenService {
   private tokensSetup: boolean = false;
   private currentWallet: AccountWallet | null = null;
@@ -424,7 +426,6 @@ export class TokenService {
     const shieldSecretHash = computeSecretHash(shieldSecret);
 
     try {
-      // Step 1: Shield the tokens
       const tx = await tokenContract.methods
         .shield(this.currentWallet.getAddress(), shieldAmount, shieldSecretHash, 0)
         .send({})
@@ -432,10 +433,8 @@ export class TokenService {
 
       console.log(`Shielded ${amount} ${token.symbol} tokens. Transaction hash: ${tx.txHash}`);
 
-      // Add the pending shield note to the PXE
       await this.addPendingShieldNoteToPXE(shieldAmount, shieldSecretHash, tx.txHash, tokenAddress);
 
-      // Step 2: Redeem the shielded tokens
       const redeemTx = await tokenContract.methods
         .redeem_shield(this.currentWallet.getAddress(), shieldAmount, shieldSecret)
         .send()
@@ -545,4 +544,28 @@ export class TokenService {
     // ...
   }
 
+  async getTokenByAddress(address: AztecAddress) {
+    const tokens = await this.getTokens();
+    for (const token of tokens) {
+      const tokenAddress = await this.getTokenAddress(token);
+      if (tokenAddress.equals(address)) {
+        return token;
+      }
+    }
+    return undefined;
+  }
+
 }
+
+
+
+const cc = await CheatCodes.create(CONFIG.l1RpcUrl, this.pxe);
+
+
+const notes = await cc.aztec.loadPrivate(
+  currentWallet.getAddress(),
+  tokenAddress,
+  TokenContract.storage.pending_shields.slot,
+);
+
+console.log(`Found ${notes.length} notes for token at ${tokenAddress.toString()}`);

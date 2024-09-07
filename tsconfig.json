@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "target": "ESNext",
+    "allowArbitraryExtensions": true,
     "useDefineForClassFields": true,
     "module": "Node16",
     "lib": ["ESNext", "DOM"],

@@ -13,7 +13,7 @@ export default defineConfig({
                 })
             )
             : undefined,
-        nodePolyfills(),
+        nodePolyfills({ protocolImports: true }),
     ].filter(Boolean),
     resolve: {
         alias: {

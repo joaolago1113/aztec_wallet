@@ -529,16 +529,16 @@ export class UIManager {
             <div class="form-group">
               <label>Transfer Type:</label>
               <div class="radio-group">
-                <div class="radio-option">
+                <label class="radio-option">
                   <input type="radio" id="privateTransfer" name="transferType" value="private" checked>
                   <span class="radio-custom"></span>
-                  <label for="privateTransfer">Private Transfer</label>
-                </div>
-                <div class="radio-option">
+                  Private Transfer
+                </label>
+                <label class="radio-option">
                   <input type="radio" id="publicTransfer" name="transferType" value="public">
                   <span class="radio-custom"></span>
-                  <label for="publicTransfer">Public Transfer</label>
-                </div>
+                  Public Transfer
+                </label>
               </div>
             </div>
             <div class="modal-actions">

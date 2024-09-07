@@ -1,11 +1,12 @@
 import { AccountService } from './AccountService.js';
 import { UIManager } from '../ui/UIManager.js';
-import { PXE } from '@aztec/circuit-types';
-import { TokenContract, TokenContractArtifact } from '@aztec/noir-contracts.js';
-import { L1EventPayload, AccountWallet } from '@aztec/aztec.js';
-import { AztecAddress } from '@aztec/circuits.js';
-import { ExtendedUnencryptedL2Log } from '@aztec/circuit-types';
-import { LogFilter } from '@aztec/circuit-types';
+import { PXE, EventType } from '@aztec/circuit-types';
+import { TokenContract } from '@aztec/noir-contracts.js';
+import { AccountWallet, Fr, AztecAddress, EventSelector, CheatCodes } from '@aztec/aztec.js';
+import { TokenService } from './TokenService.js';
+import { CONFIG } from '../config.js';
+
+
 
 export class TransactionService {
   private transactions: any[] = [];
@@ -13,7 +14,8 @@ export class TransactionService {
   constructor(
     private pxe: PXE,
     private uiManager: UIManager,
-    private accountService: AccountService
+    private accountService: AccountService,
+    private tokenService: TokenService
   ) {
     this.loadTransactionsFromLocalStorage();
   }
@@ -39,53 +41,73 @@ export class TransactionService {
 
     this.transactions = []; // Clear existing transactions
 
-    await this.fetchPrivateTransactions(currentWallet);
-    await this.fetchPublicTransactions(currentWallet);
+    await this.fetchUnencryptedTransactions(currentWallet);
+
+    await this.fetchEncryptedTransactions(currentWallet);
 
     console.log('All transactions fetched:', this.transactions);
     this.saveTransactionsToLocalStorage();
   }
 
-  private async fetchPrivateTransactions(currentWallet: AccountWallet) {
-    console.log('Fetching private transactions...');
+  private async fetchEncryptedTransactions(currentWallet: AccountWallet) {
+    console.log('Fetching encrypted transactions...');
     const tokenAddresses = await this.getTokenAddresses();
 
     for (const tokenAddress of tokenAddresses) {
       try {
-        console.log('Fetching private notes with params:', {
-          owner: currentWallet.getAddress().toString(),
-          contractAddress: tokenAddress.toString(),
-          storageSlot: TokenContract.storage.balances.slot.toString(),
-          scopes: [currentWallet.getAddress().toString()],
-        });
+        //const contract = await TokenContract.at(tokenAddress, currentWallet);
+        
+        const fromBlock = 0;
+        const toBlock = await this.pxe.getBlockNumber();
 
-        const notes = await this.pxe.getIncomingNotes({
-          owner: currentWallet.getAddress(),
-          contractAddress: tokenAddress,
-          storageSlot: TokenContract.storage.balances.slot,
-          scopes: [currentWallet.getAddress()],
-        });
+        const incomingEvents = await currentWallet.getEvents(
+          EventType.Encrypted,
+          TokenContract.events.Transfer,
+          fromBlock,
+          toBlock - fromBlock + 1,
+          [currentWallet.getCompleteAddress().publicKeys.masterIncomingViewingPublicKey]
+        );
 
-        console.log(`Found ${notes.length} private notes for token at ${tokenAddress.toString()}`);
+        const outgoingEvents = await currentWallet.getEvents(
+          EventType.Encrypted,
+          TokenContract.events.Transfer,
+          fromBlock,
+          toBlock - fromBlock + 1,
+          [currentWallet.getCompleteAddress().publicKeys.masterOutgoingViewingPublicKey]
+        );
 
-        const privateTransactions = notes.map(note => ({
-          type: 'receive',
-          amount: note.note.items[0].toString(),
-          token: 'ETH', // Replace with actual token symbol
+
+
+        const allEncryptedEvents = [...incomingEvents, ...outgoingEvents];
+
+        console.log(`Found ${allEncryptedEvents.length} encrypted events for token at ${tokenAddress.toString()}`);
+
+        const token = await this.tokenService.getTokenByAddress(tokenAddress);
+
+        const encryptedTransactions = allEncryptedEvents.map(event => ({
+          type: event.from.equals(currentWallet.getAddress()) ? 'send' : 'receive',
+          amount: event.amount.toString(),
+          token: token ? token.symbol : 'Unknown',
           status: 'completed',
           timestamp: Date.now(), // You might want to use a more accurate timestamp if available
+          from: event.from.toString(),
+          to: event.to.toString(),
+          encrypted: true
         }));
 
-        this.transactions.push(...privateTransactions);
+        this.transactions.push(...encryptedTransactions);
       } catch (error) {
-        console.error(`Error fetching private transactions for token at ${tokenAddress.toString()}:`, error);
+        console.error(`Error fetching encrypted transactions for token at ${tokenAddress.toString()}:`, error);
       }
     }
   }
 
-  private async fetchPublicTransactions(currentWallet: AccountWallet) {
-    console.log('Fetching public transactions...');
+  private async fetchUnencryptedTransactions(currentWallet: AccountWallet) {
+    console.log('Fetching unencrypted transactions...');
     const tokenAddresses = await this.getTokenAddresses();
+
+    const values = notes.map(note => note.items[0]);
+    const balance = values.reduce((sum, current) => sum + current.toBigInt(), 0n);
 
     for (const tokenAddress of tokenAddresses) {
       try {
@@ -93,51 +115,42 @@ export class TransactionService {
         
         const fromBlock = 0;
         const toBlock = await this.pxe.getBlockNumber();
-        const logFilter: LogFilter = {
-          fromBlock: fromBlock,
-          toBlock: toBlock,
-          //contractAddress: tokenAddress,
-          //eventSelector: TokenContract.events.Transfer.eventSelector.toString(), // Convert to string
-        };
+
+        const unencryptedEvents = await currentWallet.getEvents(
+          EventType.Unencrypted,
+          TokenContract.events.Transfer,
+          fromBlock,
+          toBlock - fromBlock + 1,
+        );
+        const cc = await CheatCodes.create(CONFIG.l1RpcUrl, this.pxe);
 
 
-        console.log('Fetching public logs with filter:', logFilter);
+        const notes = await cc.aztec.loadPrivate(
+          currentWallet.getAddress(),
+          tokenAddress,
+          TokenContract.storage.pending_shields.slot,
+        );
 
-        const logs = await this.pxe.getUnencryptedLogs(logFilter);
+        console.log(`Found ${notes.length} notes for token at ${tokenAddress.toString()}`);
 
-        console.log(`Found ${logs.logs.length} public logs for token at ${tokenAddress.toString()}`);
+        console.log(`Found ${unencryptedEvents.length} unencrypted events for token at ${tokenAddress.toString()}`);
 
-        const publicTransactions = logs.logs
-          .map((log: ExtendedUnencryptedL2Log) => {
-            let decodedLog;
-            try {
+        const token = await this.tokenService.getTokenByAddress(tokenAddress);
 
-              console.log('Log:', log.toHumanReadable());
+        const unencryptedTransactions = unencryptedEvents.map(event => ({
+          type: event.from.equals(currentWallet.getAddress()) ? 'send' : 'receive',
+          amount: event.amount.toString(),
+          token: token ? token.symbol : 'Unknown',
+          status: 'completed',
+          timestamp: Date.now(), // You might want to use a more accurate timestamp if available
+          from: event.from.toString(),
+          to: event.to.toString(),
+          encrypted: false
+        }));
 
-              //decodedLog = TokenContract.events.Transfer.decode(log);
-            } catch (error) {
-              console.error('Error decoding log:', error);
-            }
-           //if (!decodedLog) return null;
-
-           console.log('Decoded log:', decodedLog);
-            // Assuming the Transfer event structure is { from, to, amount }
-            // Adjust these field names if they're different in the actual event
-            return {
-              type: log.toHumanReadable(),//decodedLog.from.equals(currentWallet.getAddress()) ? 'send' : 'receive',
-              amount:'', //decodedLog.amount?.toString() || '0', // Use optional chaining and provide a default
-              token:'', //'ETH', // Replace with actual token symbol if available
-              status: '',//'completed',
-              timestamp: '',//log.timestamp,
-              from: '',//decodedLog.from.toString(),
-              to: '',//decodedLog.to.toString(),
-            };
-          })
-          .filter((tx): tx is NonNullable<typeof tx> => tx !== null);
-
-        this.transactions.push(...publicTransactions);
+        this.transactions.push(...unencryptedTransactions);
       } catch (error) {
-        console.error(`Error fetching public transactions for token at ${tokenAddress.toString()}:`, error);
+        console.error(`Error fetching unencrypted transactions for token at ${tokenAddress.toString()}:`, error);
       }
     }
   }

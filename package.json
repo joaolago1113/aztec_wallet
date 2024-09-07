@@ -28,6 +28,7 @@
     "@aztec/circuits.js": "0.52.0",
     "@aztec/foundation": "0.52.0",
     "@aztec/noir-contracts.js": "0.52.0",
+    "@aztec/sdk": "^2.1.97",
     "@shieldswap/wallet-sdk": "0.51.0",
     "@types/node": "^18.7.23",
     "@walletconnect/client": "^1.8.0",
@@ -35,6 +36,7 @@
     "@walletconnect/types": "^2.15.2",
     "buffer": "^6.0.3",
     "lokijs": "1.x",
+    "ts-serializable": "^3.2.3",
     "tslib": "^2.7.0",
     "vite-plugin-node-polyfills": "^0.22.0",
     "vite-plugin-resolve": "^2.5.2"
