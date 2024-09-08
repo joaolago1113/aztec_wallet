@@ -38,7 +38,7 @@ async function main() {
   const accountService = new AccountService(pxe, keystore, uiManager);
   const tokenService = new TokenService(pxe, uiManager, accountService);
   const walletConnectService = new WalletConnectService(CONFIG.WALLETCONNECT_PROJECT_ID, CONFIG.SDK_METADATA, accountService, uiManager);
-  const transactionService = new TransactionService(pxe, uiManager, accountService);
+  const transactionService = new TransactionService(pxe, uiManager, accountService, tokenService);
 
   // Set up services after creation
   accountService.setTokenService(tokenService);

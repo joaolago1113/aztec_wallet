@@ -1,11 +1,11 @@
 import { AccountService } from '../services/AccountService.js';
 import { TokenService } from '../services/TokenService.js';
+import { TokenContract } from '@aztec/noir-contracts.js';
 import { WalletConnectService } from '../services/WalletConnectService.js';
 import { CryptoUtils } from '../utils/CryptoUtils.js';
-import { Fr } from "@aztec/aztec.js";
+import { Fr, Note } from "@aztec/aztec.js";
 import { AztecAddress } from '@aztec/circuits.js';
 import { TransactionService } from '../services/TransactionService.js';
-import { TokenContract } from '@aztec/noir-contracts.js';
 import { PXEFactory } from '../factories/PXEFactory.js';
 
 interface SimulationResult {
@@ -16,6 +16,16 @@ interface SimulationResult {
   toBalanceAfter: bigint;
   gasEstimate: bigint;
   error?: string;
+}
+
+// Add this helper function at the top of the file or in a separate utilities file
+function getFrValue(frValue: Fr | { type: string, value: string }): bigint {
+  if (frValue instanceof Fr) {
+    return frValue.toBigInt();
+  } else if (typeof frValue === 'object' && frValue.type === 'Fr') {
+    return Fr.fromString(frValue.value).toBigInt();
+  }
+  throw new Error('Invalid Fr value');
 }
 
 export class UIManager {
@@ -81,6 +91,17 @@ export class UIManager {
     if (currentWallet) {
       try {
         await this.tokenService.updateBalancesForNewAccount(currentWallet);
+
+        // Fetch pending shields for each token
+        const pendingShields = await Promise.all(this.tokenService.getTokens().map(async (token) => {
+          const tokenAddress = await this.tokenService.getTokenAddress(token);
+          const pendingShieldNotes = await this.tokenService.getPendingShields(tokenAddress);
+          const pendingShields = await this.tokenService.getStoredPendingShields(tokenAddress);
+          return { token, pendingShields, pendingShieldNotes };
+        }));
+
+        // Update the pending shields list
+        this.updatePendingShieldsList(pendingShields);
       } catch (error) {
         console.error('Error updating balances for new account:', error);
         alert('Failed to update token balances. Please try again.');
@@ -218,11 +239,18 @@ export class UIManager {
       }
     });
 
+    document.addEventListener('change', (event) => {
+      const target = event.target as HTMLInputElement;
+      if (target.name === 'tokenAction') {
+        this.updateTokenForm(target.value);
+      }
+    });
+
     document.addEventListener('submit', async (event) => {
       const target = event.target as HTMLElement;
       if (target.matches('#createMintTokenForm')) {
         event.preventDefault();
-        await this.handleCreateMintTokenSubmit(event);
+        await this.handleCreateMintImportTokenSubmit(event);
       }
     });
   }
@@ -255,7 +283,7 @@ export class UIManager {
     try {
       const secretKeyFr = await CryptoUtils.generateSecretKey();
       await this.accountService.createAccount(secretKeyFr);
-      await this.updateAccountUI();
+      this.updateAccountUI();
       
       const currentWallet = await this.accountService.getCurrentWallet();
       if (currentWallet) {
@@ -358,7 +386,7 @@ export class UIManager {
     }
   }
 
-  public updateTokensTable(tokenRows: { name: string; symbol: string; balance: { public: string; private: string } }[]) {
+  public async updateTokensTable(tokenRows: { name: string; symbol: string; balance: { public: string; private: string } }[]) {
     console.log('Updating tokens table with rows:', tokenRows);
     const tokensTableBody = document.getElementById('tokensTableBody');
     const loadingSpinner = document.getElementById('loadingSpinner');
@@ -377,7 +405,7 @@ export class UIManager {
     const fragment = document.createDocumentFragment();
 
     // Add new rows
-    tokenRows.forEach(token => {
+    for (const token of tokenRows) {
       const row = document.createElement('tr');
       
       const tokenCell = document.createElement('td');
@@ -385,6 +413,15 @@ export class UIManager {
         <div class="token-info">
           <span class="token-symbol">${token.symbol}</span>
           <span class="token-name">${token.name}</span>
+          <div class="token-address-container">
+            <span class="token-address" id="tokenAddress_${token.symbol}"></span>
+            <button class="copy-address-button" data-symbol="${token.symbol}">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+          </div>
         </div>
       `;
       row.appendChild(tokenCell);
@@ -429,11 +466,43 @@ export class UIManager {
       });
 
       row.appendChild(actionsCell);
+
       fragment.appendChild(row);
-    });
+    }
 
     tokensTableBody.appendChild(fragment);
     console.log('Tokens table updated');
+
+    // Add event listeners for copy buttons
+    const copyButtons = tokensTableBody.querySelectorAll('.copy-address-button');
+    copyButtons.forEach(button => {
+      button.addEventListener('click', async () => {
+        const symbol = button.getAttribute('data-symbol');
+        if (symbol) {
+          const address = await this.getTokenAddress(symbol);
+          await navigator.clipboard.writeText(address);
+          this.showSuccessMessage(`Address for ${symbol} copied to clipboard!`);
+        }
+      });
+    });
+
+    // Fetch and display token addresses
+    for (const token of tokenRows) {
+      const addressSpan = document.getElementById(`tokenAddress_${token.symbol}`);
+      if (addressSpan) {
+        const address = await this.getTokenAddress(token.symbol);
+        addressSpan.textContent = `${address.slice(0, 6)}...${address.slice(-4)}`;
+      }
+    }
+  }
+
+  private async getTokenAddress(symbol: string): Promise<string> {
+    const token = await this.tokenService.getTokenBySymbol(symbol);
+    if (token) {
+      const address = await this.tokenService.getTokenAddress(token);
+      return address.toString();
+    }
+    return 'Address not found';
   }
 
   async handleSendToken(token: { name: string; symbol: string }) {
@@ -888,48 +957,6 @@ export class UIManager {
     }
   }
 
-  private handleCreateMintTokenSubmit(event: Event) {
-    event.preventDefault();
-    const form = event.target as HTMLFormElement;
-    const nameInput = form.querySelector('#tokenName') as HTMLInputElement;
-    const symbolInput = form.querySelector('#tokenSymbol') as HTMLInputElement;
-    const amountInput = form.querySelector('#tokenAmount') as HTMLInputElement;
-    const submitButton = form.querySelector('button[type="submit"]') as HTMLButtonElement;
-
-    const tokenData = {
-      name: nameInput.value,
-      symbol: symbolInput.value,
-      amount: amountInput.value
-    };
-
-    // Disable the button
-    submitButton.disabled = true;
-    submitButton.textContent = 'Processing...';
-
-    this.tokenService.createOrMintToken(tokenData)
-      .then(() => {
-        // Clear the form fields
-        nameInput.value = '';
-        symbolInput.value = '';
-        amountInput.value = '';
-      })
-      .catch(error => {
-        console.error('Detailed error in handleCreateMintTokenSubmit:', error);
-        let errorMessage = 'Failed to create/mint token. ';
-        if (error instanceof Error) {
-          errorMessage += error.message;
-        } else {
-          errorMessage += 'Unknown error occurred.';
-        }
-        alert(errorMessage);
-      })
-      .finally(() => {
-        // Re-enable the button and reset its text
-        submitButton.disabled = false;
-        submitButton.textContent = 'Create/Mint';
-      });
-  }
-
   private async initializeAccountInfo() {
     const currentAccountIndex = this.accountService.getCurrentAccountIndex();
     if (currentAccountIndex !== null) {
@@ -1081,6 +1108,192 @@ export class UIManager {
       alert(`Your address ${address.toString()} has been registered successfully.`);
     } catch (error) {
       alert(`Failed to register your address: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  public async updatePendingShieldsList(pendingShieldsData: { 
+    token: { name: string; symbol: string }; 
+    pendingShieldNotes: Note[];
+  }[]) {
+    const pendingShieldsList = document.getElementById('pendingShieldsList');
+    if (pendingShieldsList) {
+      pendingShieldsList.innerHTML = '';
+
+      if (pendingShieldsData.length === 0) {
+        pendingShieldsList.innerHTML = '<p class="no-pending-shields">No pending shields available.</p>';
+        return;
+      }
+
+      for (const { token, pendingShieldNotes } of pendingShieldsData) {
+        const tokenContainer = document.createElement('div');
+        tokenContainer.className = 'token-pending-shields-container';
+        tokenContainer.setAttribute('data-token-symbol', token.symbol);
+
+        const tokenHeader = document.createElement('div');
+        tokenHeader.className = 'token-pending-shields-header';
+        tokenHeader.innerHTML = `
+          <h4 class="token-pending-shields-title">${token.name} (${token.symbol})</h4>
+          <span class="pending-shields-count">${pendingShieldNotes.length} pending</span>
+        `;
+        tokenContainer.appendChild(tokenHeader);
+
+        if (pendingShieldNotes.length === 0) {
+          const noShieldsMessage = document.createElement('p');
+          noShieldsMessage.className = 'no-pending-shields';
+          noShieldsMessage.textContent = `No pending shields for ${token.symbol}`;
+          tokenContainer.appendChild(noShieldsMessage);
+        } else {
+          const notesList = document.createElement('ul');
+          notesList.className = 'pending-shields-list';
+
+          pendingShieldNotes.forEach((note, index) => {
+            const noteItem = document.createElement('li');
+            noteItem.className = 'pending-shield-note-item';
+            
+            // Safely access note.items[2] and provide a fallback
+            const nonce = note.items[2] ? note.items[2].toBigInt() : BigInt(index);
+            
+            noteItem.innerHTML = `
+              <div class="pending-shield-info">
+                <span class="pending-shield-amount">${getFrValue(note.items[0]).toString()} ${token.symbol}</span>
+                <span class="pending-shield-index">Shield #${nonce.toString()}</span>
+              </div>
+              <button class="redeem-button" data-token-name="${token.name}" data-token-symbol="${token.symbol}" data-index="${index}">Redeem</button>
+            `;
+            notesList.appendChild(noteItem);
+          });
+
+          tokenContainer.appendChild(notesList);
+        }
+
+        pendingShieldsList.appendChild(tokenContainer);
+      }
+
+      // Add event listeners for redeem buttons
+      const redeemButtons = pendingShieldsList.querySelectorAll('.redeem-button');
+      redeemButtons.forEach(button => {
+        button.addEventListener('click', async (event) => {
+          const target = event.target as HTMLButtonElement;
+          target.disabled = true;
+          target.textContent = 'Redeeming...';
+
+          let tokenSymbol = '';
+
+          try {
+            const tokenName = target.getAttribute('data-token-name') || '';
+            tokenSymbol = target.getAttribute('data-token-symbol') || '';
+            const index = parseInt(target.getAttribute('data-index') || '0', 10);
+            await this.tokenService.redeemShield({ name: tokenName, symbol: tokenSymbol }, index);
+            this.showSuccessMessage(`Successfully redeemed ${tokenSymbol} shield`);
+          } catch (error) {
+            console.error('Error redeeming shield:', error);
+            this.showErrorMessage(`Failed to redeem ${tokenSymbol} shield: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          } finally {
+            target.disabled = false;
+            target.textContent = 'Redeem';
+          }
+        });
+      });
+    }
+  }
+
+  private showErrorMessage(message: string) {
+    const errorMessage = document.createElement('div');
+    errorMessage.id = 'errorMessage';
+    errorMessage.className = 'error-message';
+    errorMessage.innerHTML = `<p>${message}</p>`;
+    document.body.appendChild(errorMessage);
+
+    setTimeout(() => {
+      const messageElement = document.getElementById('errorMessage');
+      if (messageElement) {
+        document.body.removeChild(messageElement);
+      }
+    }, 5000);
+  }
+
+  private async handleCreateMintImportTokenSubmit(event: Event) {
+    event.preventDefault();
+    const form = event.target as HTMLFormElement;
+    const nameInput = form.querySelector('#tokenName') as HTMLInputElement;
+    const symbolInput = form.querySelector('#tokenSymbol') as HTMLInputElement;
+    const amountInput = form.querySelector('#tokenAmount') as HTMLInputElement;
+    const addressInput = form.querySelector('#tokenAddress') as HTMLInputElement;
+    const mintAmountInput = form.querySelector('#mintAmount') as HTMLInputElement;
+    const actionRadios = form.querySelectorAll('input[name="tokenAction"]') as NodeListOf<HTMLInputElement>;
+    const submitButton = form.querySelector('button[type="submit"]') as HTMLButtonElement;
+
+    const action = Array.from(actionRadios).find(radio => radio.checked)?.value;
+
+    submitButton.disabled = true;
+    submitButton.textContent = 'Processing...';
+
+    try {
+      switch (action) {
+        case 'create':
+          await this.tokenService.createToken({
+            name: nameInput.value,
+            symbol: symbolInput.value,
+            amount: amountInput.value
+          });
+          break;
+        case 'mint':
+          await this.tokenService.mintToken(addressInput.value, mintAmountInput.value);
+          break;
+        case 'import':
+          await this.tokenService.importExistingToken(addressInput.value);
+          break;
+        default:
+          throw new Error('Invalid action selected');
+      }
+
+      // Clear the form fields
+      form.reset();
+      this.updateTokenForm('create'); // Reset form to create mode
+
+      this.showSuccessMessage(`Successfully ${action}ed token`);
+    } catch (error) {
+      console.error(`Error ${action}ing token:`, error);
+      this.showErrorMessage(`Failed to ${action} token. ${error instanceof Error ? error.message : 'Unknown error occurred.'}`);
+    } finally {
+      submitButton.disabled = false;
+      submitButton.textContent = 'Submit';
+    }
+  }
+
+  private updateTokenForm(action: string) {
+    const createFields = document.getElementById('createFields');
+    const mintImportFields = document.getElementById('mintImportFields');
+    const tokenNameInput = document.getElementById('tokenName') as HTMLInputElement;
+    const tokenSymbolInput = document.getElementById('tokenSymbol') as HTMLInputElement;
+    const tokenAmountInput = document.getElementById('tokenAmount') as HTMLInputElement;
+    const tokenAddressInput = document.getElementById('tokenAddress') as HTMLInputElement;
+    const mintAmountGroup = document.getElementById('mintAmountGroup');
+    const mintAmountInput = document.getElementById('mintAmount') as HTMLInputElement;
+
+    if (action === 'create') {
+      createFields!.style.display = 'block';
+      mintImportFields!.style.display = 'none';
+      tokenNameInput.required = true;
+      tokenSymbolInput.required = true;
+      tokenAmountInput.required = true;
+      tokenAddressInput.required = false;
+      mintAmountInput.required = false;
+    } else {
+      createFields!.style.display = 'none';
+      mintImportFields!.style.display = 'block';
+      tokenNameInput.required = false;
+      tokenSymbolInput.required = false;
+      tokenAmountInput.required = false;
+      tokenAddressInput.required = true;
+      
+      if (action === 'mint') {
+        mintAmountGroup!.style.display = 'block';
+        mintAmountInput.required = true;
+      } else {
+        mintAmountGroup!.style.display = 'none';
+        mintAmountInput.required = false;
+      }
     }
   }
 }

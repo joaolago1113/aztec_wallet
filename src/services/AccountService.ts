@@ -244,4 +244,17 @@ export class AccountService {
 
     console.log('Nullifier key rotated successfully in both Keystore and KeyRegistry');
   }
+
+  async getPrivateKey(): Promise<Fr> {
+    const currentAccountIndex = this.getCurrentAccountIndex();
+    if (currentAccountIndex === null) {
+      throw new Error('No account selected');
+    }
+
+    const accounts = await this.keystore.getAccounts();
+    const accountAddress = accounts[currentAccountIndex];
+
+    const privateKeyBuffer = await this.keystore.getEcdsaSecretKey(accountAddress);
+    return Fr.fromBuffer(privateKeyBuffer);
+  }
 }

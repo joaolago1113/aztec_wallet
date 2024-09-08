@@ -4,7 +4,8 @@ import { PXE } from '@aztec/circuit-types';
 import { GasSettings } from '@aztec/circuits.js';
 import { UIManager } from '../ui/UIManager.js';
 import { AccountService } from '../services/AccountService.js';
-
+import { CheatCodes } from '@aztec/aztec.js';
+import { CONFIG } from '../config.js';
 
 
 export class TokenService {
@@ -14,6 +15,7 @@ export class TokenService {
   private registeredContracts: Map<string, string> = new Map();
   private isUpdating: boolean = false;
   private updateTableDebounceTimer: NodeJS.Timeout | null = null;
+  private pendingShields: { [key: string]: Fr[] } = {};
 
   constructor(
     private pxe: PXE,
@@ -24,6 +26,7 @@ export class TokenService {
     this.ensureUniqueTokens();
     
     this.verifyPXEConnection();
+    this.loadPendingShieldsFromLocalStorage();
   }
 
   private async verifyPXEConnection() {
@@ -36,6 +39,10 @@ export class TokenService {
   }
 
   private saveTokensToLocalStorage() {
+
+     console.log("Saving tokens to localStorage:", this.tokens);
+
+
     localStorage.setItem('tokens', JSON.stringify(this.tokens));
     localStorage.setItem('registeredContracts', JSON.stringify(Array.from(this.registeredContracts.entries())));
   }
@@ -108,6 +115,7 @@ export class TokenService {
       const deploy = TokenContract.deploy(wallet, wallet.getAddress(), token.name, token.symbol, 18);
       console.log('Deploy object created successfully');
 
+    
       console.log('Creating deploy options...');
       const deployOpts = { contractAddressSalt: new Fr(BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER))), universalDeploy: true };
       console.log('Deploy options created:', deployOpts);
@@ -323,89 +331,37 @@ export class TokenService {
     return balances;
   }
 
-  // New method to handle token creation/minting
-  async createOrMintToken(tokenData: { name: string; symbol: string; amount: string }) {
-    if (!tokenData.name) {
-      throw new Error("Token name is required");
+  async createToken(tokenData: { name: string; symbol: string; amount: string }) {
+    if (!this.currentWallet) {
+      throw new Error("No wallet available. Please create an account first.");
     }
+
     try {
-      console.log('Creating or minting token:', tokenData);
-      const wallet = await this.accountService.getCurrentWallet();
-      if (!wallet) {
-        throw new Error("No wallet available. Please create an account first.");
-      }
-      this.currentWallet = wallet;
-
-      console.log('Current wallet address:', this.currentWallet.getAddress().toString());
-
-      const existingToken = this.tokens.find(t => t.symbol === tokenData.symbol && t.name === tokenData.name);
-      console.log('Existing token:', existingToken);
-
-      // Convert the amount to a BigInt to ensure precise integer representation
-      const mintAmountBigInt = BigInt(tokenData.amount);
-      console.log(`Attempting to mint ${mintAmountBigInt.toString()} ${tokenData.symbol} tokens`);
-
-      // Create Fr value correctly from BigInt input
-      const mintAmount = new Fr(mintAmountBigInt);
-      console.log('Mint amount as Fr:', mintAmount.toString());
-
-      if (existingToken) {
-        // Mint existing token
-        console.log(`Minting existing token: ${existingToken.name} (${existingToken.symbol})`);
-        const tokenAddress = await this.getTokenAddress(existingToken);
-        const tokenContract = await TokenContract.at(tokenAddress, this.currentWallet);
-        console.log(`Minting ${mintAmountBigInt.toString()} ${existingToken.symbol} tokens`);
-        await tokenContract.methods.privately_mint_private_note(mintAmount).send().wait();
-        console.log(`Minted ${mintAmountBigInt.toString()} ${existingToken.symbol} tokens`);
-      } else {
-        // Create new token
-        console.log(`Creating new token: ${tokenData.name} (${tokenData.symbol})`);
-        const { contract: newToken, address: tokenAddress } = await this.setupToken(this.currentWallet, tokenData);
-        this.addToken({ name: tokenData.name, symbol: tokenData.symbol });
-        console.log(`Attempting to mint ${mintAmountBigInt.toString()} ${tokenData.symbol} tokens`);
-        try {
-          const tx = await newToken.methods.privately_mint_private_note(mintAmount).send();
-          console.log('Mint transaction sent:', await tx.getTxHash());
-          console.log('Waiting for transaction receipt...');
-          const receipt = await tx.wait();
-          console.log('Transaction receipt:', receipt);
-          console.log(`Created and minted ${mintAmountBigInt.toString()} ${tokenData.symbol} tokens`);
-          
-          // Register the contract in the wallet's PXE
-          await TokenContract.at(tokenAddress, this.currentWallet);
-        } catch (mintError: unknown) {
-          console.error('Detailed error minting tokens:', mintError);
-          if (mintError instanceof Error) {
-            console.error('Error name:', mintError.name);
-            console.error('Error message:', mintError.message);
-            console.error('Error stack:', mintError.stack);
-          }
-          if (typeof mintError === 'object' && mintError !== null) {
-            console.error('Error details:', JSON.stringify(mintError, null, 2));
-          }
-          // Attempt to get more information about the contract state
-          try {
-            const balance = await newToken.methods.balance_of_private(this.currentWallet.getAddress()).simulate();
-            console.log('Current balance after failed mint:', balance.toString());
-          } catch (balanceError) {
-            console.error('Error getting balance:', balanceError);
-          }
-          throw new Error(`Token created but minting failed: ${mintError instanceof Error ? mintError.message : 'Unknown error'}`);
-        }
-      }
-
-      // Update the tokens table after creating/minting
+      const { contract, address } = await this.setupToken(this.currentWallet, tokenData);
+      const mintAmount = new Fr(BigInt(tokenData.amount));
+      await contract.methods.privately_mint_private_note(mintAmount).send().wait();
+      console.log(`Created and minted ${tokenData.amount} ${tokenData.symbol} tokens`);
       await this.updateTable();
     } catch (error) {
-      console.error('Detailed error in createOrMintToken:', error);
-      if (error instanceof Error) {
-        console.error('Error name:', error.name);
-        console.error('Error message:', error.message);
-        console.error('Error stack:', error.stack);
-      }
-      if (typeof error === 'object' && error !== null) {
-        console.error('Error details:', JSON.stringify(error, null, 2));
-      }
+      console.error('Error creating token:', error);
+      throw error;
+    }
+  }
+
+  async mintToken(tokenAddress: string, amount: string) {
+    if (!this.currentWallet) {
+      throw new Error("No wallet available. Please create an account first.");
+    }
+
+    try {
+      const address = AztecAddress.fromString(tokenAddress);
+      const contract = await TokenContract.at(address, this.currentWallet);
+      const mintAmount = new Fr(BigInt(amount));
+      await contract.methods.privately_mint_private_note(mintAmount).send().wait();
+      console.log(`Minted ${amount} tokens for contract at ${tokenAddress}`);
+      await this.updateTable();
+    } catch (error) {
+      console.error('Error minting tokens:', error);
       throw error;
     }
   }
@@ -422,10 +378,12 @@ export class TokenService {
     const tokenAddress = await this.getTokenAddress(token);
     const tokenContract = await TokenContract.at(tokenAddress, this.currentWallet);
     const shieldAmount = new Fr(BigInt(amount));
-    const shieldSecret = new Fr(BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)));
-    const shieldSecretHash = computeSecretHash(shieldSecret);
 
     try {
+      const nonce = await this.getNextNonce(tokenAddress);
+      const shieldSecret = await this.deriveShieldSecret(nonce);
+      const shieldSecretHash = computeSecretHash(shieldSecret);
+
       const tx = await tokenContract.methods
         .shield(this.currentWallet.getAddress(), shieldAmount, shieldSecretHash, 0)
         .send({})
@@ -433,15 +391,9 @@ export class TokenService {
 
       console.log(`Shielded ${amount} ${token.symbol} tokens. Transaction hash: ${tx.txHash}`);
 
-      await this.addPendingShieldNoteToPXE(shieldAmount, shieldSecretHash, tx.txHash, tokenAddress);
+      await this.addPendingShieldNoteToPXE(shieldAmount, shieldSecretHash, tx.txHash, tokenAddress, nonce);
 
-      const redeemTx = await tokenContract.methods
-        .redeem_shield(this.currentWallet.getAddress(), shieldAmount, shieldSecret)
-        .send()
-        .wait();
-
-      console.log(`Redeemed ${amount} ${token.symbol} tokens. Transaction hash: ${redeemTx.txHash}`);
-
+      await this.updatePendingShieldsList();
       await this.updateTable();
     } catch (error) {
       console.error('Error shielding tokens:', error);
@@ -449,8 +401,18 @@ export class TokenService {
     }
   }
 
-  private async addPendingShieldNoteToPXE(amount: Fr, secretHash: Fr, txHash: TxHash, tokenAddress: AztecAddress) {
-    const note = new Note([amount, secretHash]);
+  private async getNextNonce(tokenAddress: AztecAddress): Promise<number> {
+    const pendingShields = await this.getPendingShields(tokenAddress);
+    return pendingShields.length;
+  }
+
+  private async deriveShieldSecret(nonce: number): Promise<Fr> {
+    const privateKey = await this.accountService.getPrivateKey();
+    return computeSecretHash(new Fr(privateKey.toBigInt() + BigInt(nonce)));
+  }
+
+  private async addPendingShieldNoteToPXE(amount: Fr, secretHash: Fr, txHash: TxHash, tokenAddress: AztecAddress, nonce: number) {
+    const note = new Note([amount, secretHash, new Fr(nonce)]);
     const extendedNote = new ExtendedNote(
       note,
       this.currentWallet!.getAddress(),
@@ -460,6 +422,81 @@ export class TokenService {
       txHash
     );
     await this.currentWallet!.addNote(extendedNote);
+  }
+
+  async updatePendingShieldsList() {
+    const tokens = this.getTokens();
+    const pendingShieldsData = await Promise.all(tokens.map(async (token) => {
+      const tokenAddress = await this.getTokenAddress(token);
+      const pendingShieldNotes = await this.getPendingShields(tokenAddress);
+      return { token, pendingShieldNotes };
+    }));
+
+    // Filter out tokens with no pending shields
+    const filteredPendingShieldsData = pendingShieldsData.filter(data => data.pendingShieldNotes.length > 0);
+
+    this.uiManager.updatePendingShieldsList(filteredPendingShieldsData);
+  }
+
+  async redeemShield(token: { name: string; symbol: string }, noteIndex: number) {
+    if (!this.currentWallet) {
+      throw new Error("No wallet set. Please call setupTokens first.");
+    }
+
+
+    const tokenAddress = await this.getTokenAddress(token);
+    const tokenContract = await TokenContract.at(tokenAddress, this.currentWallet);
+
+    const pendingShieldNotes = await this.getPendingShields(tokenAddress);
+    const note = pendingShieldNotes[noteIndex];
+
+    if (!note) {
+      throw new Error(`No pending shield note found at index ${noteIndex}`);
+    }
+
+    const nonce = noteIndex;
+    const derivedSecret = await this.deriveShieldSecret(Number(nonce));
+    const derivedSecretHash = computeSecretHash(derivedSecret);
+
+    if (!derivedSecretHash.equals(note.items[1])) {
+      throw new Error("Derived secret does not match the note's secret hash");
+    }
+
+    const shieldAmount = note.items[0];
+
+    try {
+      console.log(`Redeeming shield: ${shieldAmount.toString()} ${token.name} (${token.symbol})`);
+
+      const redeemTx = await tokenContract.methods
+        .redeem_shield(this.currentWallet.getAddress(), shieldAmount, derivedSecret)
+        .send()
+        .wait();
+
+      console.log(`Redeemed ${shieldAmount.toBigInt()} ${token.name} (${token.symbol}) tokens. Transaction hash: ${redeemTx.txHash}`);
+
+      await this.updatePendingShieldsList();
+
+      await this.updateTable();
+    } catch (error) {
+      console.error('Error redeeming shield:', error);
+      throw error;
+    }
+  }
+
+  async getPendingShields(tokenAddress: AztecAddress): Promise<Note[]> {
+    const cc = await CheatCodes.create(CONFIG.l1RpcUrl, this.pxe);
+    const currentWallet = await this.accountService.getCurrentWallet();
+    if (!currentWallet) {
+      throw new Error("No wallet available. Please create an account first.");
+    }
+
+    const notes = await cc.aztec.loadPrivate(
+      currentWallet.getAddress(),
+      tokenAddress,
+      TokenContract.storage.pending_shields.slot,
+    );
+
+    return notes;
   }
 
   async unshieldToken(token: { name: string; symbol: string }, amount: string) {
@@ -544,7 +581,7 @@ export class TokenService {
     // ...
   }
 
-  async getTokenByAddress(address: AztecAddress) {
+  async getNameSymbolByAddress(address: AztecAddress) {
     const tokens = await this.getTokens();
     for (const token of tokens) {
       const tokenAddress = await this.getTokenAddress(token);
@@ -555,17 +592,68 @@ export class TokenService {
     return undefined;
   }
 
+  private loadPendingShieldsFromLocalStorage() {
+    const storedPendingShields = localStorage.getItem('pendingShields');
+    if (storedPendingShields) {
+      this.pendingShields = JSON.parse(storedPendingShields);
+    }
+  }
+
+  async getStoredPendingShields(tokenAddress: AztecAddress): Promise<Fr[]> {
+    const tokenAddressString = tokenAddress.toString();
+    return this.pendingShields[tokenAddressString] || [];
+  }
+
+  async importExistingToken(address: string) {
+    if (!this.currentWallet) {
+      throw new Error("No wallet set. Please call setupTokens first.");
+    }
+
+    try {
+      const tokenAddress = AztecAddress.fromString(address);
+      const contract = await TokenContract.at(tokenAddress, this.currentWallet);
+
+      // Fetch token details from the contract
+      let name = await contract.methods.public_get_name().simulate();
+      let symbol = await contract.methods.public_get_symbol().simulate();
+
+      // Check if the returned values are large numbers
+      if (typeof name === 'object' && 'value' in name && typeof name.value === 'bigint') {
+        name = "N/A";
+      }
+      if (typeof symbol === 'object' && 'value' in symbol && typeof symbol.value === 'bigint') {
+        symbol = "N/A";
+      }
+
+      console.log("Importing token:", name, symbol, address);
+
+      console.log(name);
+      console.log(symbol);
+
+      // Add the token to our list
+      this.addToken({ name, symbol });
+      this.registeredContracts.set(`${name}-${symbol}`, address);
+      this.saveTokensToLocalStorage();
+
+      console.log(`Imported existing token contract for ${name} (${symbol}) at address ${address}`);
+      
+      // Update the main token table
+      await this.updateTable();
+      
+      // Update the Pending Shields UI
+      await this.updatePendingShieldsList();
+
+    } catch (error) {
+      console.error('Error importing existing token contract:', error);
+      throw error;
+    }
+  }
+
+  async getTokenBySymbol(symbol: string) {
+    const tokens = this.getTokens();
+    return tokens.find(token => token.symbol === symbol);
+  }
+
 }
 
 
-
-const cc = await CheatCodes.create(CONFIG.l1RpcUrl, this.pxe);
-
-
-const notes = await cc.aztec.loadPrivate(
-  currentWallet.getAddress(),
-  tokenAddress,
-  TokenContract.storage.pending_shields.slot,
-);
-
-console.log(`Found ${notes.length} notes for token at ${tokenAddress.toString()}`);

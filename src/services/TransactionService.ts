@@ -1,15 +1,24 @@
 import { AccountService } from './AccountService.js';
 import { UIManager } from '../ui/UIManager.js';
-import { PXE, EventType } from '@aztec/circuit-types';
+import { PXE, EventType, UniqueNote, L2Block } from '@aztec/circuit-types';
 import { TokenContract } from '@aztec/noir-contracts.js';
-import { AccountWallet, Fr, AztecAddress, EventSelector, CheatCodes } from '@aztec/aztec.js';
+import { AccountWallet, Fr, AztecAddress, EventSelector, CheatCodes, TxHash } from '@aztec/aztec.js';
 import { TokenService } from './TokenService.js';
 import { CONFIG } from '../config.js';
 
-
+interface Transaction {
+  type: 'send' | 'receive';
+  amount: string;
+  token: string;
+  status: 'completed';
+  timestamp: number;
+  from: string;
+  to: string;
+  txHash: string;
+}
 
 export class TransactionService {
-  private transactions: any[] = [];
+  private transactions: Transaction[] = [];
 
   constructor(
     private pxe: PXE,
@@ -41,118 +50,75 @@ export class TransactionService {
 
     this.transactions = []; // Clear existing transactions
 
-    await this.fetchUnencryptedTransactions(currentWallet);
+    const tokenAddresses = await this.getTokenAddresses();
 
-    await this.fetchEncryptedTransactions(currentWallet);
+    for (const tokenAddress of tokenAddresses) {
+      try {
+        const token = await this.tokenService.getNameSymbolByAddress(tokenAddress);
+        const symbol = token ? token.symbol : 'Unknown';
+
+        const outgoingNotes = await this.pxe.getOutgoingNotes({
+          contractAddress: tokenAddress,
+          owner: currentWallet.getAddress()
+        });
+
+        const incomingNotes = await this.pxe.getIncomingNotes({
+          contractAddress: tokenAddress,
+          owner: currentWallet.getAddress()
+        });
+
+        console.log("Outgoing notes:", outgoingNotes);
+        console.log("Incoming notes:", incomingNotes);
+
+        const outgoingTransactions = await this.processNotes(outgoingNotes, symbol, 'send', currentWallet);
+        const incomingTransactions = await this.processNotes(incomingNotes, symbol, 'receive', currentWallet);
+
+        this.transactions.push(...outgoingTransactions, ...incomingTransactions);
+      } catch (error) {
+        console.error(`Error fetching transactions for token at ${tokenAddress.toString()}:`, error);
+      }
+    }
+
+    // Sort transactions by timestamp in descending order
+    this.transactions.sort((a, b) => b.timestamp - a.timestamp);
 
     console.log('All transactions fetched:', this.transactions);
     this.saveTransactionsToLocalStorage();
   }
 
-  private async fetchEncryptedTransactions(currentWallet: AccountWallet) {
-    console.log('Fetching encrypted transactions...');
-    const tokenAddresses = await this.getTokenAddresses();
+  private async processNotes(notes: UniqueNote[], symbol: string, type: 'send' | 'receive', currentWallet: AccountWallet): Promise<Transaction[]> {
+    return Promise.all(notes.map(async (note) => {
+      const amount = note.note.items[0].value;
+      const txHash = note.txHash;
+      const receipt = await this.pxe.getTxReceipt(txHash);
+      
+      let timestamp = Date.now(); // Default to current time if we can't get the block timestamp
+      if (receipt && receipt.blockNumber !== undefined) {
+        const block = await this.pxe.getBlock(receipt.blockNumber);
 
-    for (const tokenAddress of tokenAddresses) {
-      try {
-        //const contract = await TokenContract.at(tokenAddress, currentWallet);
-        
-        const fromBlock = 0;
-        const toBlock = await this.pxe.getBlockNumber();
-
-        const incomingEvents = await currentWallet.getEvents(
-          EventType.Encrypted,
-          TokenContract.events.Transfer,
-          fromBlock,
-          toBlock - fromBlock + 1,
-          [currentWallet.getCompleteAddress().publicKeys.masterIncomingViewingPublicKey]
-        );
-
-        const outgoingEvents = await currentWallet.getEvents(
-          EventType.Encrypted,
-          TokenContract.events.Transfer,
-          fromBlock,
-          toBlock - fromBlock + 1,
-          [currentWallet.getCompleteAddress().publicKeys.masterOutgoingViewingPublicKey]
-        );
-
-
-
-        const allEncryptedEvents = [...incomingEvents, ...outgoingEvents];
-
-        console.log(`Found ${allEncryptedEvents.length} encrypted events for token at ${tokenAddress.toString()}`);
-
-        const token = await this.tokenService.getTokenByAddress(tokenAddress);
-
-        const encryptedTransactions = allEncryptedEvents.map(event => ({
-          type: event.from.equals(currentWallet.getAddress()) ? 'send' : 'receive',
-          amount: event.amount.toString(),
-          token: token ? token.symbol : 'Unknown',
-          status: 'completed',
-          timestamp: Date.now(), // You might want to use a more accurate timestamp if available
-          from: event.from.toString(),
-          to: event.to.toString(),
-          encrypted: true
-        }));
-
-        this.transactions.push(...encryptedTransactions);
-      } catch (error) {
-        console.error(`Error fetching encrypted transactions for token at ${tokenAddress.toString()}:`, error);
+        if (block) {
+          timestamp = Number(block.getStats().blockTimestamp) * 1000; // Convert to milliseconds
+        }
       }
-    }
+
+      return {
+        type,
+        amount: amount.toString(),
+        token: symbol,
+        status: 'completed',
+        timestamp,
+        from: type === 'send' ? currentWallet.getAddress().toString() : note.owner.toString(),
+        to: type === 'receive' ? currentWallet.getAddress().toString() : note.owner.toString(),
+        txHash: txHash.toString()
+      };
+    }));
   }
 
-  private async fetchUnencryptedTransactions(currentWallet: AccountWallet) {
-    console.log('Fetching unencrypted transactions...');
-    const tokenAddresses = await this.getTokenAddresses();
-
-    const values = notes.map(note => note.items[0]);
-    const balance = values.reduce((sum, current) => sum + current.toBigInt(), 0n);
-
-    for (const tokenAddress of tokenAddresses) {
-      try {
-        const contract = await TokenContract.at(tokenAddress, currentWallet);
-        
-        const fromBlock = 0;
-        const toBlock = await this.pxe.getBlockNumber();
-
-        const unencryptedEvents = await currentWallet.getEvents(
-          EventType.Unencrypted,
-          TokenContract.events.Transfer,
-          fromBlock,
-          toBlock - fromBlock + 1,
-        );
-        const cc = await CheatCodes.create(CONFIG.l1RpcUrl, this.pxe);
-
-
-        const notes = await cc.aztec.loadPrivate(
-          currentWallet.getAddress(),
-          tokenAddress,
-          TokenContract.storage.pending_shields.slot,
-        );
-
-        console.log(`Found ${notes.length} notes for token at ${tokenAddress.toString()}`);
-
-        console.log(`Found ${unencryptedEvents.length} unencrypted events for token at ${tokenAddress.toString()}`);
-
-        const token = await this.tokenService.getTokenByAddress(tokenAddress);
-
-        const unencryptedTransactions = unencryptedEvents.map(event => ({
-          type: event.from.equals(currentWallet.getAddress()) ? 'send' : 'receive',
-          amount: event.amount.toString(),
-          token: token ? token.symbol : 'Unknown',
-          status: 'completed',
-          timestamp: Date.now(), // You might want to use a more accurate timestamp if available
-          from: event.from.toString(),
-          to: event.to.toString(),
-          encrypted: false
-        }));
-
-        this.transactions.push(...unencryptedTransactions);
-      } catch (error) {
-        console.error(`Error fetching unencrypted transactions for token at ${tokenAddress.toString()}:`, error);
-      }
+  private getTimestampFromBlock(block: L2Block): number {
+    if ('timestamp' in block) {
+      return Number(block.getStats().blockTimestamp) * 1000; // Convert to milliseconds
     }
+    return Date.now(); // Fallback to current time if timestamp is not available
   }
 
   private async getTokenAddresses(): Promise<AztecAddress[]> {
