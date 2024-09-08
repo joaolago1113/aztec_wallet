@@ -207,17 +207,17 @@ export class UIManager {
         row.innerHTML = '<td colspan="5">No transactions found</td>';
         transactionsTableBody.appendChild(row);
       } else {
-        transactions.forEach((transaction: Transaction) => {
+        for (const transaction of transactions) {
           const row = document.createElement('tr');
           row.innerHTML = `
-            <td>${this.getActionDescription(transaction)}</td>
-            <td>${transaction.amount} ${transaction.token}</td>
+            <td>${await this.getActionDescription(transaction)}</td>
+            <td>${await this.formatAmount(transaction)}</td>
             <td>${transaction.status}</td>
             <td>${new Date(transaction.timestamp).toLocaleString()}</td>
-            <td>${this.formatAddress(transaction.from)} → ${this.formatAddress(transaction.to)}</td>
+            <td>${await this.formatAddresses(transaction)}</td>
           `;
           transactionsTableBody.appendChild(row);
-        });
+        }
       }
     } catch (error) {
       console.error('Error fetching transactions:', error);
@@ -227,7 +227,8 @@ export class UIManager {
     }
   }
 
-  private getActionDescription(transaction: Transaction): string {
+  private async getActionDescription(transaction: Transaction): Promise<string> {
+    const currentWallet = await this.accountService.getCurrentWallet();
     switch (transaction.action) {
       case 'mint':
         return 'Minted';
@@ -236,16 +237,34 @@ export class UIManager {
       case 'unshield':
         return 'Unshielded';
       case 'transfer':
-        return transaction.type === 'send' ? 'Sent' : 'Received';
+        return transaction.from === currentWallet?.getAddress().toString() ? 'Sent' : 'Received';
       case 'redeem':
         return 'Redeemed';
       default:
-        return transaction.type === 'send' ? 'Sent' : 'Received';
+        return 'Unknown';
     }
   }
 
-  private formatAddress(address: string): string {
-    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  private async formatAmount(transaction: Transaction): Promise<string> {
+    const currentWallet = await this.accountService.getCurrentWallet();
+    const sign = transaction.action === 'unshield' || 
+                 (transaction.action === 'transfer' && transaction.from === currentWallet?.getAddress().toString())
+                 ? '-' : '+';
+    return `${sign}${transaction.amount} ${transaction.token}`;
+  }
+
+  private async formatAddresses(transaction: Transaction): Promise<string> {
+    const currentWallet = await this.accountService.getCurrentWallet();
+    const currentAddress = currentWallet?.getAddress().toString();
+    if (transaction.action === 'mint' || transaction.action === 'shield' || transaction.action === 'unshield') {
+      return this.formatAddress(currentAddress);
+    } else {
+      return `${this.formatAddress(transaction.from)} → ${this.formatAddress(transaction.to)}`;
+    }
+  }
+
+  private formatAddress(address: string | undefined): string {
+    return address ? `${address.slice(0, 6)}...${address.slice(-4)}` : 'Unknown';
   }
 
   private setupDynamicEventListeners() {

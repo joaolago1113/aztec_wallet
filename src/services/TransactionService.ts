@@ -7,7 +7,7 @@ import { TokenService } from './TokenService.js';
 import { CONFIG } from '../config.js';
 
 export interface Transaction {
-  type: 'send' | 'receive';
+  action: 'mint' | 'shield' | 'unshield' | 'transfer' | 'redeem';
   amount: string;
   token: string;
   status: 'completed';
@@ -15,7 +15,6 @@ export interface Transaction {
   from: string;
   to: string;
   txHash: string;
-  action: 'mint' | 'shield' | 'unshield' | 'transfer' | 'redeem';
 }
 
 export class TransactionService {
@@ -56,96 +55,81 @@ export class TransactionService {
         console.log("Outgoing notes:", outgoingNotes);
         console.log("Incoming notes:", incomingNotes);
 
-        const processedTransactions = await this.processNotes(outgoingNotes, incomingNotes, symbol, currentWallet);
+        const processedTransactions = this.processNotes(outgoingNotes, incomingNotes, symbol, currentWallet);
         transactions.push(...processedTransactions);
       } catch (error) {
         console.error(`Error fetching transactions for token at ${tokenAddress.toString()}:`, error);
       }
     }
 
-    // Sort transactions by timestamp in descending order
     transactions.sort((a, b) => b.timestamp - a.timestamp);
 
     console.log('All transactions fetched:', transactions);
     return transactions;
   }
 
-  private async processNotes(outgoingNotes: UniqueNote[], incomingNotes: UniqueNote[], symbol: string, currentWallet: AccountWallet): Promise<Transaction[]> {
+  private processNotes(outgoingNotes: UniqueNote[], incomingNotes: UniqueNote[], symbol: string, currentWallet: AccountWallet): Transaction[] {
     const transactions: Transaction[] = [];
     const walletAddress = currentWallet.getAddress().toString();
 
-    // Process outgoing notes
-    for (const note of outgoingNotes) {
-      const tx = await this.createTransaction(note, symbol, 'send', walletAddress);
-      transactions.push(tx);
-    }
+    // Combine and sort all notes by timestamp
+    const allNotes = [...outgoingNotes, ...incomingNotes].sort((a, b) => {
+      const timestampA = Number(a.nonce.toBigInt());
+      const timestampB = Number(b.nonce.toBigInt());
+      return timestampB - timestampA;
+    });
 
-    // Process incoming notes
-    for (const note of incomingNotes) {
-      const tx = await this.createTransaction(note, symbol, 'receive', walletAddress);
-      transactions.push(tx);
-    }
+    let previousBalance = BigInt(0);
 
-    // Determine actions based on note patterns
-    this.determineActions(transactions);
+    for (let i = 0; i < allNotes.length; i++) {
+      const note = allNotes[i];
+      const amount = BigInt(note.note.items[0].value.toString());
+      const isOutgoing = outgoingNotes.includes(note);
 
-    return transactions;
-  }
+      let action: Transaction['action'];
+      let changeAmount: bigint;
 
-  private async createTransaction(note: UniqueNote, symbol: string, type: 'send' | 'receive', walletAddress: string): Promise<Transaction> {
-    const amount = note.note.items[0].value;
-    const txHash = note.txHash;
-    const receipt = await this.pxe.getTxReceipt(txHash);
-    
-    let timestamp = Date.now();
-    if (receipt && receipt.blockNumber !== undefined) {
-      const block = await this.pxe.getBlock(receipt.blockNumber);
-      if (block) {
-        timestamp = Number(block.getStats().blockTimestamp) * 1000;
-      }
-    }
+      if (i === allNotes.length - 1) {
+        // First transaction (chronologically last)
+        action = 'mint';
+        changeAmount = amount;
+      } else {
+        const nextNote = allNotes[i + 1];
+        const nextAmount = BigInt(nextNote.note.items[0].value.toString());
 
-    return {
-      type,
-      amount: amount.toString(),
-      token: symbol,
-      status: 'completed',
-      timestamp,
-      from: type === 'send' ? walletAddress : note.owner.toString(),
-      to: type === 'receive' ? walletAddress : note.owner.toString(),
-      txHash: txHash.toString(),
-      action: 'transfer' // Default action, will be updated in determineActions
-    };
-  }
-
-  private determineActions(transactions: Transaction[]) {
-    for (let i = 0; i < transactions.length; i++) {
-      const tx = transactions[i];
-      const nextTx = transactions[i + 1];
-
-      if (tx.type === 'send' && nextTx && nextTx.type === 'receive' && tx.amount === nextTx.amount) {
-        // This is likely a transfer or an unshield operation
-        if (tx.from === tx.to) {
-          tx.action = 'unshield';
-          nextTx.action = 'unshield';
+        if (isOutgoing) {
+          if (amount < previousBalance) {
+            action = 'unshield';
+            changeAmount = previousBalance - amount;
+          } else {
+            action = 'transfer';
+            changeAmount = nextAmount - amount;
+          }
         } else {
-          tx.action = 'transfer';
-          nextTx.action = 'transfer';
+          if (amount > previousBalance) {
+            action = 'shield';
+            changeAmount = amount - previousBalance;
+          } else {
+            continue; // Skip this note as it's likely a change from a previous transaction
+          }
         }
-      } else if (tx.type === 'receive' && !nextTx) {
-        // This might be a mint or shield operation
-        tx.action = tx.from === tx.to ? 'mint' : 'shield';
-      } else if (tx.type === 'send' && (!nextTx || nextTx.type === 'send')) {
-        // This might be an unshield operation without change
-        tx.action = 'unshield';
       }
 
-      // Handle redeem actions
-      if (tx.action === 'shield' && nextTx && nextTx.action === 'unshield') {
-        tx.action = 'redeem';
-        nextTx.action = 'redeem';
-      }
+      previousBalance = amount;
+
+      transactions.push({
+        action,
+        amount: changeAmount.toString(),
+        token: symbol,
+        status: 'completed',
+        timestamp: Number(note.nonce.toBigInt()) * 1000, // Convert to milliseconds
+        from: action === 'transfer' && isOutgoing ? walletAddress : note.owner.toString(),
+        to: action === 'transfer' && !isOutgoing ? walletAddress : note.owner.toString(),
+        txHash: note.txHash.toString()
+      });
     }
+
+    return transactions.reverse(); // Reverse to get chronological order
   }
 
   private async getTokenAddresses(): Promise<AztecAddress[]> {
