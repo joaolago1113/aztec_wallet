@@ -7,6 +7,7 @@ import { Fr, Note } from "@aztec/aztec.js";
 import { AztecAddress } from '@aztec/circuits.js';
 import { TransactionService } from '../services/TransactionService.js';
 import { PXEFactory } from '../factories/PXEFactory.js';
+import {Transaction} from '../services/TransactionService.js';
 
 interface SimulationResult {
   isPrivate: boolean;
@@ -118,8 +119,7 @@ export class UIManager {
 
   private async updateTransactionsPage() {
     console.log('Updating Transactions page');
-    await this.transactionService.fetchTransactions();
-    this.displayTransactions();
+    await this.displayTransactions();
   }
 
   private async updateBridgePage() {
@@ -190,33 +190,62 @@ export class UIManager {
     // TODO: Implement the withdraw functionality
   }
 
-  private displayTransactions() {
+  private async displayTransactions() {
     const transactionsTableBody = document.getElementById('transactionsTableBody');
     if (!transactionsTableBody) {
       console.debug('Transactions table body not found. This is expected if not on the Transactions page.');
       return;
     }
 
-    const transactions = this.transactionService.getTransactions();
-    console.log('Displaying transactions:', transactions);
-    transactionsTableBody.innerHTML = '';
+    try {
+      const transactions = await this.transactionService.fetchTransactions();
+      console.log('Displaying transactions:', transactions);
+      transactionsTableBody.innerHTML = '';
 
-    if (transactions.length === 0) {
-      const row = document.createElement('tr');
-      row.innerHTML = '<td colspan="4">No transactions found</td>';
-      transactionsTableBody.appendChild(row);
-    } else {
-      transactions.forEach(transaction => {
+      if (transactions.length === 0) {
         const row = document.createElement('tr');
-        row.innerHTML = `
-          <td>${transaction.type}</td>
-          <td>${transaction.amount} ${transaction.token}</td>
-          <td>${transaction.status}</td>
-          <td>${new Date(transaction.timestamp).toLocaleString()}</td>
-        `;
+        row.innerHTML = '<td colspan="5">No transactions found</td>';
         transactionsTableBody.appendChild(row);
-      });
+      } else {
+        transactions.forEach((transaction: Transaction) => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${this.getActionDescription(transaction)}</td>
+            <td>${transaction.amount} ${transaction.token}</td>
+            <td>${transaction.status}</td>
+            <td>${new Date(transaction.timestamp).toLocaleString()}</td>
+            <td>${this.formatAddress(transaction.from)} → ${this.formatAddress(transaction.to)}</td>
+          `;
+          transactionsTableBody.appendChild(row);
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching transactions:', error);
+      const row = document.createElement('tr');
+      row.innerHTML = '<td colspan="5">Error fetching transactions. Please try again later.</td>';
+      transactionsTableBody.appendChild(row);
     }
+  }
+
+  private getActionDescription(transaction: Transaction): string {
+    switch (transaction.action) {
+      case 'mint':
+        return 'Minted';
+      case 'shield':
+        return 'Shielded';
+      case 'unshield':
+        return 'Unshielded';
+      case 'transfer':
+        return transaction.type === 'send' ? 'Sent' : 'Received';
+      case 'redeem':
+        return 'Redeemed';
+      default:
+        return transaction.type === 'send' ? 'Sent' : 'Received';
+    }
+  }
+
+  private formatAddress(address: string): string {
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
   }
 
   private setupDynamicEventListeners() {

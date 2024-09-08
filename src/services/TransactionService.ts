@@ -6,7 +6,7 @@ import { AccountWallet, Fr, AztecAddress, EventSelector, CheatCodes, TxHash } fr
 import { TokenService } from './TokenService.js';
 import { CONFIG } from '../config.js';
 
-interface Transaction {
+export interface Transaction {
   type: 'send' | 'receive';
   amount: string;
   token: string;
@@ -15,40 +15,26 @@ interface Transaction {
   from: string;
   to: string;
   txHash: string;
+  action: 'mint' | 'shield' | 'unshield' | 'transfer' | 'redeem';
 }
 
 export class TransactionService {
-  private transactions: Transaction[] = [];
-
   constructor(
     private pxe: PXE,
     private uiManager: UIManager,
     private accountService: AccountService,
     private tokenService: TokenService
-  ) {
-    this.loadTransactionsFromLocalStorage();
-  }
+  ) {}
 
-  private saveTransactionsToLocalStorage() {
-    localStorage.setItem('transactions', JSON.stringify(this.transactions));
-  }
-
-  private loadTransactionsFromLocalStorage() {
-    const storedTransactions = localStorage.getItem('transactions');
-    if (storedTransactions) {
-      this.transactions = JSON.parse(storedTransactions);
-    }
-  }
-
-  async fetchTransactions() {
+  async fetchTransactions(): Promise<Transaction[]> {
     console.log('Fetching transactions...');
     const currentWallet = await this.accountService.getCurrentWallet();
     if (!currentWallet) {
       console.warn("No wallet available. Please create an account first.");
-      return;
+      return [];
     }
 
-    this.transactions = []; // Clear existing transactions
+    let transactions: Transaction[] = [];
 
     const tokenAddresses = await this.getTokenAddresses();
 
@@ -70,55 +56,96 @@ export class TransactionService {
         console.log("Outgoing notes:", outgoingNotes);
         console.log("Incoming notes:", incomingNotes);
 
-        const outgoingTransactions = await this.processNotes(outgoingNotes, symbol, 'send', currentWallet);
-        const incomingTransactions = await this.processNotes(incomingNotes, symbol, 'receive', currentWallet);
-
-        this.transactions.push(...outgoingTransactions, ...incomingTransactions);
+        const processedTransactions = await this.processNotes(outgoingNotes, incomingNotes, symbol, currentWallet);
+        transactions.push(...processedTransactions);
       } catch (error) {
         console.error(`Error fetching transactions for token at ${tokenAddress.toString()}:`, error);
       }
     }
 
     // Sort transactions by timestamp in descending order
-    this.transactions.sort((a, b) => b.timestamp - a.timestamp);
+    transactions.sort((a, b) => b.timestamp - a.timestamp);
 
-    console.log('All transactions fetched:', this.transactions);
-    this.saveTransactionsToLocalStorage();
+    console.log('All transactions fetched:', transactions);
+    return transactions;
   }
 
-  private async processNotes(notes: UniqueNote[], symbol: string, type: 'send' | 'receive', currentWallet: AccountWallet): Promise<Transaction[]> {
-    return Promise.all(notes.map(async (note) => {
-      const amount = note.note.items[0].value;
-      const txHash = note.txHash;
-      const receipt = await this.pxe.getTxReceipt(txHash);
-      
-      let timestamp = Date.now(); // Default to current time if we can't get the block timestamp
-      if (receipt && receipt.blockNumber !== undefined) {
-        const block = await this.pxe.getBlock(receipt.blockNumber);
+  private async processNotes(outgoingNotes: UniqueNote[], incomingNotes: UniqueNote[], symbol: string, currentWallet: AccountWallet): Promise<Transaction[]> {
+    const transactions: Transaction[] = [];
+    const walletAddress = currentWallet.getAddress().toString();
 
-        if (block) {
-          timestamp = Number(block.getStats().blockTimestamp) * 1000; // Convert to milliseconds
+    // Process outgoing notes
+    for (const note of outgoingNotes) {
+      const tx = await this.createTransaction(note, symbol, 'send', walletAddress);
+      transactions.push(tx);
+    }
+
+    // Process incoming notes
+    for (const note of incomingNotes) {
+      const tx = await this.createTransaction(note, symbol, 'receive', walletAddress);
+      transactions.push(tx);
+    }
+
+    // Determine actions based on note patterns
+    this.determineActions(transactions);
+
+    return transactions;
+  }
+
+  private async createTransaction(note: UniqueNote, symbol: string, type: 'send' | 'receive', walletAddress: string): Promise<Transaction> {
+    const amount = note.note.items[0].value;
+    const txHash = note.txHash;
+    const receipt = await this.pxe.getTxReceipt(txHash);
+    
+    let timestamp = Date.now();
+    if (receipt && receipt.blockNumber !== undefined) {
+      const block = await this.pxe.getBlock(receipt.blockNumber);
+      if (block) {
+        timestamp = Number(block.getStats().blockTimestamp) * 1000;
+      }
+    }
+
+    return {
+      type,
+      amount: amount.toString(),
+      token: symbol,
+      status: 'completed',
+      timestamp,
+      from: type === 'send' ? walletAddress : note.owner.toString(),
+      to: type === 'receive' ? walletAddress : note.owner.toString(),
+      txHash: txHash.toString(),
+      action: 'transfer' // Default action, will be updated in determineActions
+    };
+  }
+
+  private determineActions(transactions: Transaction[]) {
+    for (let i = 0; i < transactions.length; i++) {
+      const tx = transactions[i];
+      const nextTx = transactions[i + 1];
+
+      if (tx.type === 'send' && nextTx && nextTx.type === 'receive' && tx.amount === nextTx.amount) {
+        // This is likely a transfer or an unshield operation
+        if (tx.from === tx.to) {
+          tx.action = 'unshield';
+          nextTx.action = 'unshield';
+        } else {
+          tx.action = 'transfer';
+          nextTx.action = 'transfer';
         }
+      } else if (tx.type === 'receive' && !nextTx) {
+        // This might be a mint or shield operation
+        tx.action = tx.from === tx.to ? 'mint' : 'shield';
+      } else if (tx.type === 'send' && (!nextTx || nextTx.type === 'send')) {
+        // This might be an unshield operation without change
+        tx.action = 'unshield';
       }
 
-      return {
-        type,
-        amount: amount.toString(),
-        token: symbol,
-        status: 'completed',
-        timestamp,
-        from: type === 'send' ? currentWallet.getAddress().toString() : note.owner.toString(),
-        to: type === 'receive' ? currentWallet.getAddress().toString() : note.owner.toString(),
-        txHash: txHash.toString()
-      };
-    }));
-  }
-
-  private getTimestampFromBlock(block: L2Block): number {
-    if ('timestamp' in block) {
-      return Number(block.getStats().blockTimestamp) * 1000; // Convert to milliseconds
+      // Handle redeem actions
+      if (tx.action === 'shield' && nextTx && nextTx.action === 'unshield') {
+        tx.action = 'redeem';
+        nextTx.action = 'redeem';
+      }
     }
-    return Date.now(); // Fallback to current time if timestamp is not available
   }
 
   private async getTokenAddresses(): Promise<AztecAddress[]> {
@@ -137,10 +164,5 @@ export class TransactionService {
 
     console.log('Token addresses:', tokenAddresses.map(addr => addr.toString()));
     return tokenAddresses;
-  }
-
-  getTransactions() {
-    console.log('Returning transactions:', this.transactions);
-    return this.transactions;
   }
 }
