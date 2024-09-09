@@ -201,48 +201,39 @@ export class TokenService {
             console.log(`Token address: ${tokenAddress.toString()}`);
             const tokenContract = await TokenContract.at(tokenAddress, this.currentWallet!);
             
-            let privateBalance, publicBalance;
+            let privateBalance: bigint = BigInt(0);
+            let publicBalance: bigint = BigInt(0);
             
             console.log("address", this.currentWallet!.getAddress().toString());
 
-            let callPublicBalance: ContractFunctionInteraction = await tokenContract.methods.balance_of_public(this.currentWallet!.getAddress());;
-            let callPrivateBalance: ContractFunctionInteraction = await tokenContract.methods.balance_of_private(this.currentWallet!.getAddress());;
+            let callPublicBalance: ContractFunctionInteraction = await tokenContract.methods.balance_of_public(this.currentWallet!.getAddress());
+            let callPrivateBalance: ContractFunctionInteraction = await tokenContract.methods.balance_of_private(this.currentWallet!.getAddress());
 
             try {
               publicBalance = await callPublicBalance.simulate();
             } catch (error) {
-
-              try {
-                if(callPublicBalance) {
-                  publicBalance = await callPublicBalance.send({ skipPublicSimulation: true }).wait({ dontThrowOnRevert: true });
-                }
-              } catch (error) {
-                console.error(`Error fetching public balance for ${token.symbol}:`, error);
-              }
-              publicBalance = BigInt(0);
+              console.error(`Error simulating public balance for ${token.symbol}:`, error);
+              // Keep the default value of 0
             }
             
             try {
               privateBalance = await callPrivateBalance.simulate();
             } catch (error) {
-
-              try {
-                if(callPrivateBalance) {
-                  privateBalance = await callPrivateBalance.send({ skipPublicSimulation: true }).wait({ dontThrowOnRevert: true });
-                }
-              } catch (error) {
-                console.error(`Error fetching public balance for ${token.symbol}:`, error);
-              }
-              privateBalance = BigInt(0);
+              console.error(`Error simulating private balance for ${token.symbol}:`, error);
+              // Keep the default value of 0
             }
 
-            console.log(`Balances for ${token.symbol}: Private=${privateBalance}, Public=${publicBalance}`);
+            // Convert to float and format
+            const privateBalanceFloat = Number(privateBalance) / 1e9;
+            const publicBalanceFloat = Number(publicBalance) / 1e9;
+
+            console.log(`Balances for ${token.symbol}: Private=${privateBalanceFloat}, Public=${publicBalanceFloat}`);
             return {
               name: token.name,
               symbol: token.symbol,
               balance: {
-                private: privateBalance.toString(),
-                public: publicBalance.toString()
+                private: this.formatBalance(privateBalanceFloat),
+                public: this.formatBalance(publicBalanceFloat)
               }
             };
           } catch (error) {
@@ -264,6 +255,15 @@ export class TokenService {
       }
       console.log("Exiting updateTable method");
     }, 300); // Adjust the delay as needed
+  }
+
+  private formatBalance(balance: number): string {
+    if (Number.isInteger(balance)) {
+      return balance.toString();
+    } else {
+      // Display up to 9 decimal places, but remove trailing zeros
+      return balance.toFixed(9).replace(/\.?0+$/, '');
+    }
   }
 
   // Add this new method
@@ -335,10 +335,15 @@ export class TokenService {
     if (!this.currentWallet) {
       throw new Error("No wallet available. Please create an account first.");
     }
+    // Check if amount is a valid number
+    const parsedAmount = Number(tokenData.amount);
+    if (isNaN(parsedAmount)) {
+      throw new Error("Invalid amount. Please provide a valid number.");
+    }
 
     try {
       const { contract, address } = await this.setupToken(this.currentWallet, tokenData);
-      const mintAmount = new Fr(BigInt(tokenData.amount));
+      const mintAmount = new Fr(BigInt(parsedAmount * 1e9));
       await contract.methods.privately_mint_private_note(mintAmount).send().wait();
       console.log(`Created and minted ${tokenData.amount} ${tokenData.symbol} tokens`);
       await this.updateTable();
@@ -352,11 +357,16 @@ export class TokenService {
     if (!this.currentWallet) {
       throw new Error("No wallet available. Please create an account first.");
     }
+    // Check if amount is a valid number
+    const parsedAmount = Number(amount);
+    if (isNaN(parsedAmount)) {
+      throw new Error("Invalid amount. Please provide a valid number.");
+    }
 
     try {
       const address = AztecAddress.fromString(tokenAddress);
       const contract = await TokenContract.at(address, this.currentWallet);
-      const mintAmount = new Fr(BigInt(amount));
+      const mintAmount = new Fr(BigInt(parsedAmount * 1e9));
       await contract.methods.privately_mint_private_note(mintAmount).send().wait();
       console.log(`Minted ${amount} tokens for contract at ${tokenAddress}`);
       await this.updateTable();
@@ -377,11 +387,13 @@ export class TokenService {
 
     const tokenAddress = await this.getTokenAddress(token);
     const tokenContract = await TokenContract.at(tokenAddress, this.currentWallet);
-    const shieldAmount = new Fr(BigInt(amount));
+
+    // Convert the amount to a number, multiply by 1e9, then convert to BigInt
+    const shieldAmount = new Fr(BigInt(Math.round(parseFloat(amount) * 1e9)));
 
     try {
-      const nonce = await this.getNextNonce(tokenAddress);
-      const shieldSecret = await this.deriveShieldSecret(nonce);
+      const index = await this.getNextNonce(tokenAddress);
+      const shieldSecret = await this.deriveShieldSecret(index);
       const shieldSecretHash = computeSecretHash(shieldSecret);
 
       const tx = await tokenContract.methods
@@ -391,7 +403,7 @@ export class TokenService {
 
       console.log(`Shielded ${amount} ${token.symbol} tokens. Transaction hash: ${tx.txHash}`);
 
-      await this.addPendingShieldNoteToPXE(shieldAmount, shieldSecretHash, tx.txHash, tokenAddress, nonce);
+      await this.addPendingShieldNoteToPXE(shieldAmount, shieldSecretHash, tx.txHash, tokenAddress, index);
 
       await this.updatePendingShieldsList();
       await this.updateTable();
@@ -406,9 +418,11 @@ export class TokenService {
     return pendingShields.length;
   }
 
-  private async deriveShieldSecret(nonce: number): Promise<Fr> {
-    const privateKey = await this.accountService.getPrivateKey();
-    return computeSecretHash(new Fr(privateKey.toBigInt() + BigInt(nonce)));
+  private async deriveShieldSecret(index: number): Promise<Fr> {
+
+    const currentWallet = await this.accountService.getCurrentWallet();
+    const privateKey = await this.accountService.getPrivateKey(currentWallet!.getAddress().toString());
+    return computeSecretHash(new Fr(privateKey.toBigInt() + BigInt(index)));
   }
 
   private async addPendingShieldNoteToPXE(amount: Fr, secretHash: Fr, txHash: TxHash, tokenAddress: AztecAddress, nonce: number) {
@@ -454,8 +468,8 @@ export class TokenService {
       throw new Error(`No pending shield note found at index ${noteIndex}`);
     }
 
-    const nonce = noteIndex;
-    const derivedSecret = await this.deriveShieldSecret(Number(nonce));
+    const index = noteIndex;
+    const derivedSecret = await this.deriveShieldSecret(Number(index));
     const derivedSecretHash = computeSecretHash(derivedSecret);
 
     if (!derivedSecretHash.equals(note.items[1])) {
@@ -506,7 +520,7 @@ export class TokenService {
 
     const tokenAddress = await this.getTokenAddress(token);
     const tokenContract = await TokenContract.at(tokenAddress, this.currentWallet);
-    const unshieldAmount = new Fr(BigInt(amount));
+    const unshieldAmount = new Fr(BigInt(amount) * BigInt(1e9));
 
     try {
 
@@ -537,9 +551,9 @@ export class TokenService {
 
     let tx;
     if (isPrivate) {
-      tx = await tokenContract.methods.transfer(AztecAddress.fromString(recipient), BigInt(amount)).send();
+      tx = await tokenContract.methods.transfer(AztecAddress.fromString(recipient), BigInt(amount) * BigInt(1e9)).send();
     } else {
-      tx = await tokenContract.methods.transfer_public(this.currentWallet.getAddress(), AztecAddress.fromString(recipient), BigInt(amount), 0).send();
+      tx = await tokenContract.methods.transfer_public(this.currentWallet.getAddress(), AztecAddress.fromString(recipient), BigInt(amount) * BigInt(1e9), 0).send();
     }
 
     await tx.wait();
@@ -604,6 +618,18 @@ export class TokenService {
     return this.pendingShields[tokenAddressString] || [];
   }
 
+  private tokenNameSymboltoString(value: bigint) {
+    const vals: number[] = Array.from(new Fr(value).toBuffer());
+  
+    let str = '';
+    for (let i = 0; i < vals.length; i++) {
+      if (vals[i] != 0) {
+        str += String.fromCharCode(Number(vals[i]));
+      }
+    }
+    return str;
+  };
+
   async importExistingToken(address: string) {
     if (!this.currentWallet) {
       throw new Error("No wallet set. Please call setupTokens first.");
@@ -613,22 +639,13 @@ export class TokenService {
       const tokenAddress = AztecAddress.fromString(address);
       const contract = await TokenContract.at(tokenAddress, this.currentWallet);
 
-      // Fetch token details from the contract
-      let name = await contract.methods.public_get_name().simulate();
-      let symbol = await contract.methods.public_get_symbol().simulate();
+      const simluatedName = (await contract.methods.public_get_name().simulate()).value;
+      const simluatedSymbol = (await contract.methods.public_get_symbol().simulate()).value;
 
-      // Check if the returned values are large numbers
-      if (typeof name === 'object' && 'value' in name && typeof name.value === 'bigint') {
-        name = "N/A";
-      }
-      if (typeof symbol === 'object' && 'value' in symbol && typeof symbol.value === 'bigint') {
-        symbol = "N/A";
-      }
+      let name = this.tokenNameSymboltoString(simluatedName);
+      let symbol = this.tokenNameSymboltoString(simluatedSymbol);
 
       console.log("Importing token:", name, symbol, address);
-
-      console.log(name);
-      console.log(symbol);
 
       // Add the token to our list
       this.addToken({ name, symbol });

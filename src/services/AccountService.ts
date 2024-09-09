@@ -11,6 +11,9 @@ import { getCanonicalKeyRegistryAddress } from '@aztec/protocol-contracts/key-re
 import { DefaultAccountInterface } from '@aztec/accounts/defaults';
 import { derivePublicKeyFromSecretKey } from '@aztec/circuits.js';
 import { getEcdsaKWallet } from '@aztec/accounts/ecdsa';
+import { EcdsaKCustomAccountContract } from '../contracts/EcdsaKCustomAccountContract.js';
+import { getCustomEcdsaKWallet } from '../utils/CustomWalletUtils.js';
+
 
 
 export class AccountService {
@@ -37,7 +40,6 @@ export class AccountService {
       localStorage.removeItem('currentAccountIndex');
     }
   }
-
   async createAccount(secretKey: Fr) {
     const account: AccountManager = await this.getAccount(secretKey);
     const wallet: AccountWallet = await this.getWallet(account);
@@ -89,10 +91,9 @@ export class AccountService {
     const accounts = await this.keystore.getAccounts();
     const accountAddress = accounts[this.currentAccountIndex];
 
-
     const ecdsaSkBuffer = await this.keystore.getEcdsaSecretKey(accountAddress);
     const ecdsaSk = Fr.fromBuffer(ecdsaSkBuffer);
-    const ecdsaKWallet = getEcdsaKWallet(this.pxe, accountAddress, ecdsaSk.toBuffer());
+    const ecdsaKWallet = await getCustomEcdsaKWallet(this.pxe, accountAddress, ecdsaSk.toBuffer());
 
     return ecdsaKWallet;
   }
@@ -119,7 +120,8 @@ export class AccountService {
 
   private async getAccount(secretKey: Fr): Promise<AccountManager> {
     const privateKey = CryptoUtils.deriveSigningKey(secretKey);
-    const accountContract = new EcdsaKAccountContract(privateKey.toBuffer());
+
+    const accountContract = new EcdsaKCustomAccountContract(privateKey.toBuffer());
 
     return new AccountManager(this.pxe, secretKey, accountContract, Fr.ONE);
   }
@@ -245,15 +247,30 @@ export class AccountService {
     console.log('Nullifier key rotated successfully in both Keystore and KeyRegistry');
   }
 
-  async getPrivateKey(): Promise<Fr> {
-    const currentAccountIndex = this.getCurrentAccountIndex();
-    if (currentAccountIndex === null) {
-      throw new Error('No account selected');
+
+  async getWalletByAddress(address: string): Promise<AccountWallet | null> {
+    const accounts = await this.keystore.getAccounts();
+    const index = accounts.findIndex(acc => acc.toString() === address);
+  
+    if (index === -1) {
+      return null;
     }
 
-    const accounts = await this.keystore.getAccounts();
-    const accountAddress = accounts[currentAccountIndex];
+    const accountAddress = accounts[index];
+    const ecdsaSkBuffer = await this.keystore.getEcdsaSecretKey(accountAddress);
+    const ecdsaSk = Fr.fromBuffer(ecdsaSkBuffer);
+    return getCustomEcdsaKWallet(this.pxe, accountAddress, ecdsaSk.toBuffer());
+  }
 
+  async getPrivateKey(address: string): Promise<Fr> {
+    const accounts = await this.keystore.getAccounts();
+    const index = accounts.findIndex(acc => acc.toString() === address);
+  
+    if (index === -1) {
+      throw new Error(`No account found for address ${address}`);
+    }
+
+    const accountAddress = accounts[index];
     const privateKeyBuffer = await this.keystore.getEcdsaSecretKey(accountAddress);
     return Fr.fromBuffer(privateKeyBuffer);
   }

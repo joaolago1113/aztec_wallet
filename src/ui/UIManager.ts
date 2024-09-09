@@ -1201,9 +1201,13 @@ export class UIManager {
             // Safely access note.items[2] and provide a fallback
             const nonce = note.items[2] ? note.items[2].toBigInt() : BigInt(index);
             
+            const amountBigInt = BigInt(getFrValue(note.items[0]).toString());
+            const amount = Number(amountBigInt) / 1e9;
+            const formattedAmount = amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 9 });
+            
             noteItem.innerHTML = `
               <div class="pending-shield-info">
-                <span class="pending-shield-amount">${getFrValue(note.items[0]).toString()} ${token.symbol}</span>
+                <span class="pending-shield-amount">${formattedAmount.toString()} ${token.symbol}</span>
                 <span class="pending-shield-index">Shield #${nonce.toString()}</span>
               </div>
               <button class="redeem-button" data-token-name="${token.name}" data-token-symbol="${token.symbol}" data-index="${index}">Redeem</button>

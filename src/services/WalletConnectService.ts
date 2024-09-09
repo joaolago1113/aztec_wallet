@@ -2,13 +2,17 @@ import { SignClient } from '@walletconnect/sign-client';
 import { PairingTypes } from '@walletconnect/types';
 import { AccountService } from './AccountService.js';
 import { UIManager } from '../ui/UIManager.js';
-import { type AccountWallet, Fr, computeAuthWitMessageHash, computeInnerAuthWitHash, computeSecretHash, AztecAddress, SentTx  } from '@aztec/aztec.js';
+import { type AccountWallet, SentTx, Fr, computeAuthWitMessageHash, computeInnerAuthWitHash, computeSecretHash, AztecAddress, Note, ExtendedNote  } from '@aztec/aztec.js';
 import { PXEFactory } from '../factories/PXEFactory.js';
 import { AuthWitness, PXE } from '@aztec/aztec.js';
 import { FunctionType } from '@aztec/foundation/abi';
-import { TxHash, BatchCall, FunctionCall, FunctionSelector,  } from '@aztec/aztec.js';
+import { TxHash, BatchCall, FunctionCall, FunctionSelector } from '@aztec/aztec.js';
+import { ExecutionRequestInit } from '@aztec/aztec.js/entrypoint';
+import { EngineTypes } from '@walletconnect/types';
+import { SessionTypes } from '@walletconnect/types';
 import { TxExecutionRequest, type TxReceipt } from '@aztec/circuit-types';
-import { type FieldsOf } from '@aztec/foundation/types';
+import { TokenContract } from '@aztec/noir-contracts.js';
+
 
 interface CallData {
   name: string;
@@ -22,6 +26,7 @@ interface CallData {
 export class WalletConnectService {
   private signClient: InstanceType<typeof SignClient>;
   private initializationPromise: Promise<void>;
+  private approvedSessions: Map<string, { topic: string, expiryTimestamp: number }> = new Map();
   
   constructor(
     private projectId: string, 
@@ -32,6 +37,7 @@ export class WalletConnectService {
     this.signClient = {} as InstanceType<typeof SignClient>; // Temporary initialization
     this.initializationPromise = this.initializeSignClient(this.projectId, this.metadata);
     
+    this.loadApprovedSessions();
     this.setupEventListeners();
   }
 
@@ -56,6 +62,17 @@ export class WalletConnectService {
     this.signClient.on('session_delete', this.onSessionDelete);
   }
 
+  private saveApprovedSessions() {
+    localStorage.setItem('approvedSessions', JSON.stringify(Array.from(this.approvedSessions.entries())));
+  }
+
+  private loadApprovedSessions() {
+    const savedSessions = localStorage.getItem('approvedSessions');
+    if (savedSessions) {
+      this.approvedSessions = new Map(JSON.parse(savedSessions));
+    }
+  }
+
   async pair(uri: string) {
     await this.ensureInitialized();
     const { topic } = await this.signClient.core.pairing.pair({ uri });
@@ -71,7 +88,17 @@ export class WalletConnectService {
   async disconnectPairing(topic: string) {
     console.log('Disconnecting pairing:', topic);
     await this.ensureInitialized();
-    this.signClient.core.pairing.disconnect({ topic });
+    await this.signClient.core.pairing.disconnect({ topic });
+    
+    // Remove the disconnected session from approvedSessions
+    for (const [address, session] of this.approvedSessions.entries()) {
+      if (session.topic === topic) {
+        this.approvedSessions.delete(address);
+        break;
+      }
+    }
+    this.saveApprovedSessions(); // Save the updated sessions to localStorage
+    
     console.log('Disconnected pairing:', topic);
   }
 
@@ -80,38 +107,50 @@ export class WalletConnectService {
     console.log('Session authenticated:', payload);
   }
   private onSessionProposal = async (event: any) => {
-
     console.log('Session onSessionProposal:', event);
 
-    const currentAccountIndex = this.accountService.getCurrentAccountIndex();
-    if (currentAccountIndex === null) {
-      return;
-    }
-    const accountContract = await this.accountService.retrieveContractAddress(currentAccountIndex);
-
-    if(!accountContract){
-      alert('Please generate the contract address first.');
-      return;
-    }
-
     const { id, params } = event;
+    const { requiredNamespaces, optionalNamespaces, relays, proposer, expiryTimestamp } = params;
 
-    // You can approve or reject the proposal based on user interaction
-    const namespaces = {
+    const wallet = await this.accountService.getCurrentWallet();
+      
+    if (!wallet) {
+      throw new Error(`No wallet found.`);
+    }
+
+
+
+    const accountCompleteAddress = wallet.getCompleteAddress();
+
+    // Define the namespaces we support
+    const namespaces: SessionTypes.Namespaces = {
       eip1193: {
-        accounts: [`aztec:1:${accountContract}`],
-        methods: ['aztec_accounts', 'aztec_experimental_createSecretHash', 'aztec_createAuthWitness', 'aztec_sendTransaction'],
+        chains: [`aztec:1`],
+        accounts: [`aztec:1:${accountCompleteAddress}`],
+        methods: ['aztec_accounts', 'aztec_experimental_createSecretHash', 'aztec_createAuthWitness', 'aztec_sendTransaction', 'aztec_experimental_tokenRedeemShield'],
         events: ['accountsChanged'],
       },
     };
 
     try {
-      const { topic, acknowledged } = await this.signClient.approve({ id, namespaces });
-      const session = await acknowledged()
 
-      //console.log('Session Acknowledged:', session.acknowledged);
+      const approveParams: EngineTypes.ApproveParams = {
+        id: id,
+        namespaces: namespaces,
+        relayProtocol: relays[0].protocol,
+      };
+
+      const { topic, acknowledged } = await this.signClient.approve(approveParams);
+      await acknowledged();
+      // Save the approved session
+      this.approvedSessions.set(accountCompleteAddress.address.toString(), { topic, expiryTimestamp });
+      this.saveApprovedSessions(); // Save to localStorage
+
+      console.log('Session proposal approved');
     } catch (error) {
       console.error('Failed to approve session:', error);
+      // You might want to reject the session here
+      await this.signClient.reject({ id, reason: { code: 0, message: 'User rejected the session' } });
     }
   }
 
@@ -122,241 +161,216 @@ export class WalletConnectService {
   private onSessionRequest = async (event: any) => {
     const { id, topic, params } = event;
     console.log('Session onSessionRequest:', event);
+    try {
+      console.log('Preparing to send response...');
 
-    const currentAccountIndex = this.accountService.getCurrentAccountIndex();
-    if (currentAccountIndex === null) {
-      return;
-    }
+      let result: any;
+      let from: string;
+      let wallet: AccountWallet | null;
 
-    const accountContract = await this.accountService.retrieveContractAddress();
+      switch (params.request.method) {
+        case 'aztec_accounts':
+          wallet = await this.accountService.getCurrentWallet()
+      
+          if (!wallet) {
+            throw new Error(`No wallet found.`);
+          }
+      
+          result = [wallet.getCompleteAddress().toString()];
+          break;
 
-    if (accountContract) {
-      console.log('Contract Address:', accountContract);
+        case 'aztec_experimental_createSecretHash':
+          console.log('aztec_experimental_createSecretHash');
+          from = params.request.params[0].from;
 
-      try {
-        console.log('Preparing to send response...');
+          const contract2 = params.request.params[0].contract;
 
-        let result: any;
-        let currentWallet: AccountWallet | null;
-        let currentWalletAddress: string;
-        let innerHash: Fr;
-        let intent: { consumer: AztecAddress, innerHash: Fr };
-        let message_: string;
-        let contract: string;
-        let from_: string;
-        let chainId: Fr;
-        let version: Fr;
-        let messageHash: Fr;
-        let witness: AuthWitness;
-        let pxe: PXE = await PXEFactory.getPXEInstance();  
+          if (!(await this.checkPairing(topic, from))) {
+            throw new Error('No valid pairing found for this topic.');
+          }
 
+          const privateKey = await this.accountService.getPrivateKey(from);
+          const derivedSecret = this.deriveShieldSecret(privateKey, 0);
+          const shieldSecretHashIn = computeSecretHash(derivedSecret);
 
-        switch (params.request.method) {
-          case 'aztec_accounts':
-            result = [accountContract.toString()];
-            break;
-          case 'aztec_experimental_createSecretHash':
-            console.log('aztec_experimental_createSecretHash');
+          console.log('shieldSecretHash:', shieldSecretHashIn);
+          result = shieldSecretHashIn.toString();
+          break;
+        case 'aztec_createAuthWitness':
+          console.log('aztec_createAuthWitness');
 
-            if (!(await this.checkPairing(topic))) {
-              throw new Error('No valid pairing found for this topic.');
-            }
+          from = params.request.params[0].from;
 
-            contract = params.request.params[0].contract;
+          if (!(await this.checkPairing(topic, from))) {
+            throw new Error('No valid pairing found for this topic.');
+          }
+          const message = params.request.params[0].message;
 
-            from_ = params.request.params[0].from;
+          wallet = await this.accountService.getWalletByAddress(from);
+          if (!wallet) {
+            throw new Error(`No wallet found for address ${from}`);
+          }
 
-            currentWallet = await this.accountService.getCurrentWallet();
-            if (!currentWallet) {
-              throw new Error('No wallet available');
-            }
-            
-            currentWalletAddress = currentWallet.getAddress().toString();
+          const witness = await wallet!.createAuthWit(Fr.fromString(message));
 
-            
+          wallet!.addAuthWitness(witness);
 
-            if (from_ !== currentWalletAddress) {
-              throw new Error(`Address mismatch: Request 'from' (${from_}) does not match current wallet address (${currentWalletAddress})`);
-            }
+          result = witness.toString();
+          break;
+        case 'aztec_sendTransaction':
+          console.log('aztec_sendTransaction');
 
-            innerHash = computeInnerAuthWitHash([Fr.fromString(contract)]);
-            intent = { 
-              consumer: AztecAddress.fromString(contract), 
-              innerHash : innerHash
-            };
+          from = params.request.params[0].from;
 
-            chainId = await currentWallet.getChainId();
-            version = await currentWallet.getVersion();
-            messageHash = computeAuthWitMessageHash(intent, { chainId, version });
-/*
-            witness = await currentWallet.createAuthWit(messageHash);
+          if (!(await this.checkPairing(topic, from))) {
+            throw new Error('No valid pairing found for this topic.');
+          }
 
-            pxe = await PXEFactory.getPXEInstance();
-            pxe.addAuthWitness(witness);
-//            result = innerHash.toString();
+          wallet = await this.accountService.getWalletByAddress(from);
 
-            result = witness.toString();
-*/
-//            result = messageHash.toString();
+          if (!wallet) {
+            throw new Error(`No wallet found for address ${from}`);
+          }
 
+          const calls = params.request.params[0].calls;
+          const simulatePublic: boolean = params.request.params[0].simulatePublic === "true" ? true : false;
 
-            const secret = Fr.random();
-            result = computeSecretHash(secret).toString();
-            break;
-          case 'aztec_createAuthWitness':
-            console.log('aztec_createAuthWitness');
+          console.log('simulatePublic:', simulatePublic);
 
-            if (!(await this.checkPairing(topic))) {
-              throw new Error('No valid pairing found for this topic.');
-            }
+          console.log('calls:', calls);
 
-            from_ = params.request.params[0].from;
-            message_ = params.request.params[0].message;
-
-
-            currentWallet = await this.accountService.getCurrentWallet();
-            if (!currentWallet) {
-              throw new Error('No wallet available');
-            }
-            currentWalletAddress = currentWallet!.getAddress().toString();
-
-            if (from_ !== currentWalletAddress) {
-              throw new Error(`Address mismatch: Request 'from' (${from_}) does not match current wallet address (${currentWalletAddress})`);
-            }
-
-            witness = await currentWallet!.createAuthWit(Fr.fromString(message_));
-
-            pxe.addAuthWitness(witness);
-
-            result = witness.toString();
-            break;
-          case 'aztec_sendTransaction':
-            console.log('aztec_sendTransaction');
-
-            if (!(await this.checkPairing(topic))) {
-              throw new Error('No valid pairing found for this topic.');
-            }
-
-            from_ = params.request.params[0].from;
-            const calls = params.request.params[0].calls;
-            const simulatePublic: boolean = params.request.params[0].simulatePublic === "true" ? true : false;
-
-            currentWallet = await this.accountService.getCurrentWallet();
-            if (!currentWallet) {
-              throw new Error('No wallet available');
-            }
-            currentWalletAddress = currentWallet.getAddress().toString();
-
-            if (from_ !== currentWalletAddress) {
-              throw new Error(`Address mismatch: Request 'from' (${from_}) does not match current wallet address (${currentWalletAddress})`);
-            }
-
-            // Convert calls to FunctionCall objects
-            const functionCalls: FunctionCall[] = calls.map((call: CallData) => new FunctionCall(
+          const functionCalls: FunctionCall[] = calls.map((call: any) => 
+            new FunctionCall(
               call.name,
               AztecAddress.fromString(call.to),
               FunctionSelector.fromString(call.selector),
               call.type === 'private' ? FunctionType.PRIVATE : FunctionType.PUBLIC,
               call.isStatic,
-              call.args.map(arg => Fr.fromString(arg)),
-              [] // Assuming returnTypes is not provided in the input, use an empty array
-            ));
+              call.args.map((arg: string) => Fr.fromString(arg)),
+              call.returnTypes.map((arg: string) => Fr.fromString(arg))
+            )
+          );
+          console.log('functionCalls:', functionCalls);
 
-            console.log('functionCalls:', functionCalls);
+          const txRequest = await wallet.createTxExecutionRequest({ calls: functionCalls });
 
-            const batchCallTx: BatchCall = new BatchCall(currentWallet, functionCalls);
+          console.log('Simulating transaction');
+          let simulatedTx;
+          try {
+            wallet.simulateTx(txRequest, simulatePublic);
+            console.log('Transaction simulated:', simulatedTx);
+          } catch (error) {
+            console.log('Proving transaction');
+            console.error('Simulation failed:', error);
+            simulatedTx = error;
+          }
 
-            const txExecutionRequest: TxExecutionRequest = await  batchCallTx.create({skipPublicSimulation: !simulatePublic});
+          const userConfirmed = await this.showConfirmationModal(simulatedTx);
 
+          if (userConfirmed) {
+            console.log('Sending transaction');
 
-
-            console.log('Simulating transaction');
-            let simulatedTx;
+            let txHash: TxHash;
             try {
-              simulatedTx = await pxe.simulateTx(txExecutionRequest, simulatePublic);
-
-              //simulatedTx = await batchCallTx.simulate();
-              console.log('Transaction simulated:', simulatedTx);
-              
-            } catch (error) {
-
-
-              console.log('Proving transaction');
-              console.error('Simulation failed:', error);
-              simulatedTx = error;
+              const txProof = await wallet.proveTx(txRequest, simulatePublic);
+              txHash = await new SentTx(
+                wallet,
+                wallet.sendTx(txProof),
+              ).getTxHash();
+            } catch (error: any) {
+              throw new Error(`Failed to send transaction: ${error.message}`);
             }
 
-            // Create a modal to ask for permission, regardless of simulation success
-            const userConfirmed = await this.showConfirmationModal(simulatedTx);
-            
+            result = txHash.toString();
+          } else {
+            throw new Error('Transaction rejected by user');
+          }
+          break;
+        case 'aztec_experimental_tokenRedeemShield':
+          console.log('aztec_experimental_tokenRedeemShield');
 
-            if (userConfirmed) {
-              console.log('Sending transaction');
+          from = params.request.params[0].from;
 
-              //let txBatch: TxHash;
-              let txHash: TxHash;
-              try {
+          if (!(await this.checkPairing(topic, from))) {
+            throw new Error('No valid pairing found for this topic.');
+          }
 
-                const proofTx = await pxe.proveTx(txExecutionRequest, simulatePublic);
+          const amount = Fr.fromString(params.request.params[0].amount);
+          const secretHash = Fr.fromString(params.request.params[0].secretHash);
+          const tokenAddress = Fr.fromString(params.request.params[0].token);
+          const txHash = TxHash.fromString(params.request.params[0].txHash);
 
-                txHash = await pxe.sendTx(proofTx)
+          wallet = await this.accountService.getWalletByAddress(from);
 
-                console.log('Transaction sent, txHash:', txHash);
+          if (!wallet) {
+            throw new Error(`No wallet found for address ${from}`);
+          }
 
-                //const sentTx: SentTx = (await batchCallTx.send({skipPublicSimulation: !simulatePublic}))
-                //txBatch = await sentTx.getTxHash();
-                //const receipt = await sentTx.wait();
-                //console.log('Transaction sent, txBatch:', txBatch);
-                //console.log('Transaction receipt:', receipt);
+          const privateKeyForRedeem = await this.accountService.getPrivateKey(from);
+          const derivedSecretForRedeem = this.deriveShieldSecret(privateKeyForRedeem, 0);
+          const shieldSecretHash = computeSecretHash(derivedSecretForRedeem);
 
+          if (shieldSecretHash.toString() !== secretHash.toString()) {
+            throw new Error('Derived secret does not match the provided secret');
+          }
 
-              } catch (error: any) {
-                throw new Error(`Failed to send transaction: ${error.message}`);
-              }
+          const tokenContract = await TokenContract.at(tokenAddress, wallet);
 
-              //console.log('Transaction sent, txBatch:', txBatch);
-              result = txHash.toString();
-            } else {
-              throw new Error('Transaction rejected by user');
-            }
-            break;
-          default:
-            throw new Error(`Unsupported method: ${params.request.method}`);
-        }
+          const note = new Note([amount, secretHash]);
+          const extendedNote = new ExtendedNote(
+            note,
+            wallet!.getAddress(),
+            tokenAddress,
+            TokenContract.storage.pending_shields.slot,
+            TokenContract.notes.TransparentNote.id,
+            txHash
+          );
+      
+          await wallet!.addNote(extendedNote);
 
-        console.log('result:', result);
-
-        await this.signClient.respond({
-          topic: topic,
-          response: {
-            id: id,
-            jsonrpc: "2.0",
-            result: result,
-          },
-        });
-
-        console.log('Session response sent successfully');
-      } catch (error) {
-        console.error('Error responding to session request:', error);
-        // Respond with an error
-
-        
-        await this.signClient.respond({
-          topic: topic,
-          response: {
-            id: id,
-            jsonrpc: "2.0",
-            error: {
-              code: -32000,
-              message: error instanceof Error ? error.message : 'Unknown error occurred',
-            },
-          },
-        });
-        
+          try {
+            const tx = await tokenContract.methods.redeem_shield( Fr.fromString(from), amount, derivedSecretForRedeem ).send();
+            await tx.wait();
+            result = (await tx.getTxHash()).toString();
+          } catch (error) {
+            throw new Error(`Failed to redeem shield: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          }
+          break;
+        default:
+          throw new Error(`Unsupported method: ${params.request.method}`);
       }
-    } else {
-      alert("No contract address found. Please generate a contract address.");
+
+      console.log('result:', result);
+
+      await this.signClient.respond({
+        topic: topic,
+        response: {
+          id: id,
+          jsonrpc: "2.0",
+          result: result,
+        },
+      });
+
+      console.log('Session response sent successfully');
+    } catch (error) {
+      console.error('Error responding to session request:', error);
+      // Respond with an error
+
+      
+      await this.signClient.respond({
+        topic: topic,
+        response: {
+          id: id,
+          jsonrpc: "2.0",
+          error: {
+            code: -32000,
+            message: error instanceof Error ? error.message : 'Unknown error occurred',
+          },
+        },
+      });
+      
     }
+
     this.uiManager.displayPairings();
   }
 
@@ -403,10 +417,28 @@ export class WalletConnectService {
     });
   }
 
-  private async checkPairing(topic: string): Promise<boolean> {
-    const pairings = await this.getPairings();
+  private async checkPairing(topic: string, from: string): Promise<boolean> {
+    console.log('topic:', topic);
+    console.log('from:', from);
 
-    return true
-    return pairings.some(pairing => pairing.topic === topic);
+    const approvedSession = this.approvedSessions.get(from);
+    if (!approvedSession || approvedSession.topic !== topic) {
+      throw new Error('Invalid session for this account');
+    }
+
+    console.log('now: ' + Date.now());
+    console.log('expiryTimestamp: ' + approvedSession.expiryTimestamp);
+
+    if (Date.now() >= approvedSession.expiryTimestamp * 10000) {
+      this.approvedSessions.delete(from);
+      this.saveApprovedSessions();
+      throw new Error('Session has expired');
+    }
+
+    return true;
+  }
+
+  private deriveShieldSecret(privateKey: Fr, nonce: number): Fr {
+    return computeSecretHash(new Fr(privateKey.toBigInt() + BigInt(nonce)));
   }
 }
