@@ -1,3 +1,5 @@
+console.log('Application starting...');
+
 import './style.css';
 import { PXEFactory } from './factories/PXEFactory.js';
 import { WalletSdkFactory } from './factories/WalletSdkFactory.js';

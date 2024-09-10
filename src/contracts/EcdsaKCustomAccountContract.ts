@@ -6,9 +6,9 @@ import { type Fr } from '@aztec/foundation/fields';
 
 import { DefaultAccountContract } from '@aztec/accounts/defaults';
 
-import EcdsaKCustomAccountContractJson from './target/ecdsa_k_account_contract-EcdsaKAccount.json';
 import { type NoirCompiledContract, loadContractArtifact } from '@aztec/aztec.js';
 
+import EcdsaKCustomAccountContractJson from './target/ecdsa_k_custom_account_contract-EcdsaKCustomAccount.json';
 export const EcdsaKCustomAccountContractArtifact = loadContractArtifact(EcdsaKCustomAccountContractJson as NoirCompiledContract);
 
 /**

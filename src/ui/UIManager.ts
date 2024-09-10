@@ -7,14 +7,16 @@ import { Fr, Note } from "@aztec/aztec.js";
 import { AztecAddress } from '@aztec/circuits.js';
 import { TransactionService } from '../services/TransactionService.js';
 import { PXEFactory } from '../factories/PXEFactory.js';
-import {Transaction} from '../services/TransactionService.js';
+import { Transaction } from '../services/TransactionService.js';
+import { TestContract } from '@aztec/noir-contracts.js';
+
 
 interface SimulationResult {
   isPrivate: boolean;
-  fromBalanceBefore: bigint;
-  toBalanceBefore: bigint;
-  fromBalanceAfter: bigint;
-  toBalanceAfter: bigint;
+  fromBalanceBefore: number;
+  toBalanceBefore: number;
+  fromBalanceAfter: number;
+  toBalanceAfter: number;
   gasEstimate: bigint;
   error?: string;
 }
@@ -97,8 +99,11 @@ export class UIManager {
         const pendingShields = await Promise.all(this.tokenService.getTokens().map(async (token) => {
           const tokenAddress = await this.tokenService.getTokenAddress(token);
           const pendingShieldNotes = await this.tokenService.getPendingShields(tokenAddress);
-          const pendingShields = await this.tokenService.getStoredPendingShields(tokenAddress);
-          return { token, pendingShields, pendingShieldNotes };
+          const formattedPendingShieldNotes = pendingShieldNotes.map(note => ({
+            items: note.items,
+            formattedAmount: this.tokenService.formatAmount(note.items[0].toBigInt())
+          }));
+          return { token, pendingShieldNotes: formattedPendingShieldNotes };
         }));
 
         // Update the pending shields list
@@ -284,6 +289,8 @@ export class UIManager {
         await this.handleConnectApp();
       } else if (target.matches('#rotateNullifierKey')) {
         await this.rotateNullifierKey(event);
+      } else if (target.matches('#eraseAllDataButton')) {
+        this.handleEraseAllData(event);
       }
     });
 
@@ -329,16 +336,21 @@ export class UIManager {
     }
 
     try {
-      const secretKeyFr = await CryptoUtils.generateSecretKey();
-      await this.accountService.createAccount(secretKeyFr);
+      const seedInput = document.getElementById('accountSeed') as HTMLInputElement;
+      const seed = seedInput.value.trim();
+      await this.accountService.createAccount(seed);
       this.updateAccountUI();
       
       const currentWallet = await this.accountService.getCurrentWallet();
       if (currentWallet) {
         await this.tokenService.updateBalancesForNewAccount(currentWallet);
       }
+
+      // Clear the seed input after successful account creation
+      seedInput.value = '';
     } catch (error) {
       console.error('Error during account creation:', error);
+      alert(`Failed to create account: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       if (submitButton) {
         submitButton.disabled = false;
@@ -372,7 +384,7 @@ export class UIManager {
       return;
     }
     try {
-      await this.accountService.createAccount(Fr.fromString(secretKey));
+      await this.accountService.createAccount(secretKey);
       this.updateAccountUI();
     } catch (error) {
       console.error('Error during account import:', error);
@@ -584,7 +596,7 @@ export class UIManager {
       const tokenContract = await TokenContract.at(tokenAddress, currentWallet);
 
       const fromAddress = currentWallet.getAddress();
-      const amountBigInt = BigInt(amount);
+      const amountBigInt = BigInt(Math.round(parseFloat(amount) * 1e9));
 
       // Simulate the chosen transfer type
       const simulation = await this.simulateTransfer(tokenContract, fromAddress, toAddress, amountBigInt, isPrivate);
@@ -599,16 +611,7 @@ export class UIManager {
         // Show loading indicator again
         this.showLoadingIndicator('Processing transfer...');
 
-        let tx;
-        if (isPrivate) {
-          tx = await tokenContract.methods.transfer(toAddress, amountBigInt).send();
-        } else {
-          tx = await tokenContract.methods.transfer_public(fromAddress, toAddress, amountBigInt, 0).send();
-        }
-
-        await tx.wait();
-        console.log(`Successfully sent ${amount} ${token.symbol} to ${recipient}`);
-        await this.tokenService.updateTable();
+        await this.tokenService.sendToken(token, recipient, amount, isPrivate);
 
         // Hide loading indicator
         this.hideLoadingIndicator();
@@ -719,10 +722,10 @@ export class UIManager {
 
       return {
         isPrivate,
-        fromBalanceBefore: fromBalance,
-        toBalanceBefore: toBalance,
-        fromBalanceAfter: fromBalance - amount,
-        toBalanceAfter: toBalance + amount,
+        fromBalanceBefore: Number(fromBalance) / 1e9,
+        toBalanceBefore: Number(toBalance) / 1e9,
+        fromBalanceAfter: (Number(fromBalance) - Number(amount)) / 1e9,
+        toBalanceAfter: (Number(toBalance) + Number(amount)) / 1e9,
         gasEstimate,
         error,
       };
@@ -732,17 +735,21 @@ export class UIManager {
 
       return {
         isPrivate,
-        fromBalanceBefore: fromBalance,
-        toBalanceBefore: toBalance,
-        fromBalanceAfter: BigInt(0),
-        toBalanceAfter: BigInt(0),
+        fromBalanceBefore: Number(fromBalance) / 1e9,
+        toBalanceBefore: Number(toBalance) / 1e9,
+        fromBalanceAfter: 0,
+        toBalanceAfter: 0,
         gasEstimate,
         error,
       };
     }
   }
 
-  async showTransferSimulation(simulation: SimulationResult, fromAddress: AztecAddress, toAddress: AztecAddress, token: { name: string; symbol: string }): Promise<boolean> {
+  async showTransferSimulation(simulation: SimulationResult, fromAddress: AztecAddress | undefined, toAddress: AztecAddress | undefined, token: { name: string; symbol: string }): Promise<boolean> {
+    const formatNumber = (num: number) => {
+      return num.toFixed(9).replace(/\.?0+$/, '');
+    };
+
     return new Promise((resolve) => {
       const modal = document.createElement('div');
       modal.className = 'modal';
@@ -759,17 +766,19 @@ export class UIManager {
             <h3>${simulation.isPrivate ? 'Private' : 'Public'} Transfer</h3>
             <div class="simulation-details">
               <div class="simulation-column">
-                <h4>Your Balance (${fromAddress.toString().slice(0, 6)}...${fromAddress.toString().slice(-4)})</h4>
-                <p>Before: <span class="balance">${simulation.fromBalanceBefore} ${token.symbol}</span></p>
-                <p>After: <span class="balance">${simulation.fromBalanceAfter} ${token.symbol}</span></p>
+                <h4>Your Balance ${fromAddress ? `(${fromAddress.toString().slice(0, 6)}...${fromAddress.toString().slice(-4)})` : ''}</h4>
+                <p>Before: <span class="balance">${formatNumber(simulation.fromBalanceBefore)} ${token.symbol}</span></p>
+                <p>After: <span class="balance">${formatNumber(simulation.fromBalanceAfter)} ${token.symbol}</span></p>
+                <p>Change: <span class="balance-change">${formatNumber(simulation.fromBalanceAfter - simulation.fromBalanceBefore)} ${token.symbol}</span></p>
               </div>
               <div class="simulation-column">
-                <h4>Recipient Balance (${toAddress.toString().slice(0, 6)}...${toAddress.toString().slice(-4)})</h4>
-                <p>Before: <span class="balance">${simulation.toBalanceBefore} ${token.symbol}</span></p>
-                <p>After: <span class="balance">${simulation.toBalanceAfter} ${token.symbol}</span></p>
+                <h4>Recipient Balance ${toAddress ? `(${toAddress.toString().slice(0, 6)}...${toAddress.toString().slice(-4)})` : ''}</h4>
+                <p>Before: <span class="balance">${formatNumber(simulation.toBalanceBefore)} ${token.symbol}</span></p>
+                <p>After: <span class="balance">${formatNumber(simulation.toBalanceAfter)} ${token.symbol}</span></p>
+                <p>Change: <span class="balance-change">${formatNumber(simulation.toBalanceAfter - simulation.toBalanceBefore)} ${token.symbol}</span></p>
               </div>
             </div>
-            <p class="gas-estimate">Estimated gas: <span>${simulation.gasEstimate}</span></p>
+            <p class="gas-estimate">Estimated gas: <span>${simulation.gasEstimate !== undefined ? simulation.gasEstimate.toString() : 'N/A'}</span></p>
           </div>
           <div class="modal-actions">
             ${simulation.error
@@ -1023,6 +1032,7 @@ export class UIManager {
   }
 
   setupUI() {
+    console.log('Setting up UI...');
     this.initializeAccountInfo();
     this.updateAccountUI();
     this.displayPairings();
@@ -1031,6 +1041,7 @@ export class UIManager {
     this.setupHashChangeListener();
     this.loadAccountState();
     this.setupDropdownMenu();
+    console.log('UI setup complete.');
   }
 
   private setupHashChangeListener() {
@@ -1083,19 +1094,27 @@ export class UIManager {
   }
 
   private showLoadingIndicator(message: string) {
-    const loadingOverlay = document.createElement('div');
-    loadingOverlay.id = 'loadingOverlay';
-    loadingOverlay.innerHTML = `
-      <div class="loading-spinner"></div>
-      <p>${message}</p>
-    `;
-    document.body.appendChild(loadingOverlay);
+    let loadingOverlay = document.getElementById('loadingOverlay');
+    if (!loadingOverlay) {
+      loadingOverlay = document.createElement('div');
+      loadingOverlay.id = 'loadingOverlay';
+      loadingOverlay.innerHTML = `
+        <div class="loading-spinner"></div>
+        <p id="loadingMessage"></p>
+      `;
+      document.body.appendChild(loadingOverlay);
+    }
+    const messageElement = loadingOverlay.querySelector('#loadingMessage');
+    if (messageElement) {
+      messageElement.textContent = message;
+    }
+    loadingOverlay.style.display = 'flex';
   }
 
   private hideLoadingIndicator() {
     const loadingOverlay = document.getElementById('loadingOverlay');
     if (loadingOverlay) {
-      document.body.removeChild(loadingOverlay);
+      loadingOverlay.style.display = 'none';
     }
   }
 
@@ -1161,7 +1180,7 @@ export class UIManager {
 
   public async updatePendingShieldsList(pendingShieldsData: { 
     token: { name: string; symbol: string }; 
-    pendingShieldNotes: Note[];
+    pendingShieldNotes: { items: Fr[]; formattedAmount: string }[];
   }[]) {
     const pendingShieldsList = document.getElementById('pendingShieldsList');
     if (pendingShieldsList) {
@@ -1201,13 +1220,9 @@ export class UIManager {
             // Safely access note.items[2] and provide a fallback
             const nonce = note.items[2] ? note.items[2].toBigInt() : BigInt(index);
             
-            const amountBigInt = BigInt(getFrValue(note.items[0]).toString());
-            const amount = Number(amountBigInt) / 1e9;
-            const formattedAmount = amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 9 });
-            
             noteItem.innerHTML = `
               <div class="pending-shield-info">
-                <span class="pending-shield-amount">${formattedAmount.toString()} ${token.symbol}</span>
+                <span class="pending-shield-amount">${note.formattedAmount} ${token.symbol}</span>
                 <span class="pending-shield-index">Shield #${nonce.toString()}</span>
               </div>
               <button class="redeem-button" data-token-name="${token.name}" data-token-symbol="${token.symbol}" data-index="${index}">Redeem</button>
@@ -1346,6 +1361,21 @@ export class UIManager {
         mintAmountGroup!.style.display = 'none';
         mintAmountInput.required = false;
       }
+    }
+  }
+
+  private handleEraseAllData(event: Event) {
+    console.log('Erase All Data button clicked');
+    event.preventDefault(); // Prevent the default anchor behavior
+    if (confirm('Are you sure you want to erase all data? This action cannot be undone.')) {
+      console.log('User confirmed, clearing localStorage...');
+      localStorage.clear();
+      console.log('localStorage cleared, showing alert...');
+      alert('All data has been erased. The page will now reload.');
+      console.log('Reloading page...');
+      window.location.reload();
+    } else {
+      console.log('User cancelled the operation');
     }
   }
 }

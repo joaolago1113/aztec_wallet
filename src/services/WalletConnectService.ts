@@ -118,8 +118,6 @@ export class WalletConnectService {
       throw new Error(`No wallet found.`);
     }
 
-
-
     const accountCompleteAddress = wallet.getCompleteAddress();
 
     // Define the namespaces we support
@@ -142,9 +140,9 @@ export class WalletConnectService {
 
       const { topic, acknowledged } = await this.signClient.approve(approveParams);
       await acknowledged();
-      // Save the approved session
+      
       this.approvedSessions.set(accountCompleteAddress.address.toString(), { topic, expiryTimestamp });
-      this.saveApprovedSessions(); // Save to localStorage
+      this.saveApprovedSessions();
 
       console.log('Session proposal approved');
     } catch (error) {
@@ -295,7 +293,7 @@ export class WalletConnectService {
             throw new Error('No valid pairing found for this topic.');
           }
 
-          const amount = Fr.fromString(params.request.params[0].amount);
+          const amount = Fr.fromString('0x' + BigInt(params.request.params[0].amount).toString(16));
           const secretHash = Fr.fromString(params.request.params[0].secretHash);
           const tokenAddress = Fr.fromString(params.request.params[0].token);
           const txHash = TxHash.fromString(params.request.params[0].txHash);
@@ -316,6 +314,13 @@ export class WalletConnectService {
 
           const tokenContract = await TokenContract.at(tokenAddress, wallet);
 
+
+          console.log("TokenContract.storage.pending_shields: " + TokenContract.storage.pending_shields.slot);
+
+          console.log("TransparentNote.id; " + TokenContract.notes.TransparentNote.id);
+
+          console.log("amount; " + amount);
+          
           const note = new Note([amount, secretHash]);
           const extendedNote = new ExtendedNote(
             note,
@@ -431,6 +436,7 @@ export class WalletConnectService {
 
     if (Date.now() >= approvedSession.expiryTimestamp * 10000) {
       this.approvedSessions.delete(from);
+      this.disconnectPairing(topic);
       this.saveApprovedSessions();
       throw new Error('Session has expired');
     }

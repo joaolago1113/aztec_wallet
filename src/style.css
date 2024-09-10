@@ -179,6 +179,7 @@ nav {
   padding: 12px 16px;
   text-decoration: none;
   display: block;
+  cursor: pointer;
 }
 
 .dropdown-item:hover {
@@ -726,6 +727,20 @@ footer nav a:hover {
   color: var(--accent-foreground);
 }
 
+#loadingOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
 .loading-spinner-container {
   position: relative;
   min-height: 100px;
@@ -748,6 +763,11 @@ footer nav a:hover {
 @keyframes spin {
   0% { transform: translate(-50%, -50%) rotate(0deg); }
   100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+#loadingOverlay p {
+  color: white;
+  margin-top: 10px;
 }
 
 /* Add this to ensure the table is hidden when loading */
@@ -796,6 +816,31 @@ footer nav a:hover {
 .form-group label {
   display: inline-block;
   margin-right: 1rem;
+}
+
+.danger-button {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 14px;
+  margin: 4px 2px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.3s;
+}
+
+.danger-button:hover {
+  background-color: #c82333;
+}
+
+/* Ensure the button takes full width in the dropdown */
+#eraseAllDataButton {
+  width: 100%;
+  text-align: left;
 }
 
 .pending-shields-list {

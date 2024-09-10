@@ -443,13 +443,23 @@ export class TokenService {
     const pendingShieldsData = await Promise.all(tokens.map(async (token) => {
       const tokenAddress = await this.getTokenAddress(token);
       const pendingShieldNotes = await this.getPendingShields(tokenAddress);
-      return { token, pendingShieldNotes };
+      return { 
+        token, 
+        pendingShieldNotes: pendingShieldNotes.map(note => ({
+          items: note.items,
+          formattedAmount: this.formatAmount(note.items[0].toBigInt())
+        }))
+      };
     }));
 
-    // Filter out tokens with no pending shields
     const filteredPendingShieldsData = pendingShieldsData.filter(data => data.pendingShieldNotes.length > 0);
 
     this.uiManager.updatePendingShieldsList(filteredPendingShieldsData);
+  }
+
+  private formatAmount(amount: bigint): string {
+    const amountFloat = Number(amount) / 1e9;
+    return amountFloat.toFixed(9).replace(/\.?0+$/, '');
   }
 
   async redeemShield(token: { name: string; symbol: string }, noteIndex: number) {
@@ -549,11 +559,13 @@ export class TokenService {
     const tokenAddress = await this.getTokenAddress(token);
     const tokenContract = await TokenContract.at(tokenAddress, this.currentWallet);
 
+    const scaledAmount = BigInt(Math.round(parseFloat(amount) * 1e9));
+
     let tx;
     if (isPrivate) {
-      tx = await tokenContract.methods.transfer(AztecAddress.fromString(recipient), BigInt(amount) * BigInt(1e9)).send();
+      tx = await tokenContract.methods.transfer(AztecAddress.fromString(recipient), scaledAmount).send();
     } else {
-      tx = await tokenContract.methods.transfer_public(this.currentWallet.getAddress(), AztecAddress.fromString(recipient), BigInt(amount) * BigInt(1e9), 0).send();
+      tx = await tokenContract.methods.transfer_public(this.currentWallet.getAddress(), AztecAddress.fromString(recipient), scaledAmount, 0).send();
     }
 
     await tx.wait();

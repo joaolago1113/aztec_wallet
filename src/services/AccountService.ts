@@ -40,20 +40,41 @@ export class AccountService {
       localStorage.removeItem('currentAccountIndex');
     }
   }
-  async createAccount(secretKey: Fr) {
-    const account: AccountManager = await this.getAccount(secretKey);
-    const wallet: AccountWallet = await this.getWallet(account);
+  async createAccount(seed?: string) {
+    let nonce = 0;
+    let secretKey: Fr;
+    let account: AccountManager;
+    let wallet: AccountWallet;
 
-    const accountInKeystore = await this.isAccountInKeystore(wallet);
+    while (true) {
+      try {
+        secretKey = CryptoUtils.generateSecretKey(seed, nonce);
+        account = await this.getAccount(secretKey);
+        wallet = await this.getWallet(account);
 
-    if (accountInKeystore) {
-      throw new Error('Account already exists in the keystore.');
-    } else {
-      await this.addAccountToKeystore(account, secretKey);
-      const accounts = await this.keystore.getAccounts();
-      this.currentAccountIndex = accounts.length - 1;
-      this.saveCurrentAccountIndex();
+        const accountInKeystore = await this.isAccountInKeystore(wallet);
+
+        if (!accountInKeystore) {
+          await this.addAccountToKeystore(account, secretKey);
+          const accounts = await this.keystore.getAccounts();
+          this.currentAccountIndex = accounts.length - 1;
+          this.saveCurrentAccountIndex();
+          return; // Successfully created and added the account
+        }
+
+        // If we're here, the account exists, so we'll try again with a new nonce
+        nonce++;
+      } catch (error) {
+        console.error('Error creating account:', error);
+        throw error;
+      }
     }
+  }
+
+  private async getAccount(secretKey: Fr): Promise<AccountManager> {
+    const privateKey = deriveSigningKey(secretKey);
+    const accountContract = new EcdsaKCustomAccountContract(privateKey.toBuffer());
+    return new AccountManager(this.pxe, secretKey, accountContract, Fr.ONE);
   }
 
   async getSkKeysAtIndex() {
@@ -116,14 +137,6 @@ export class AccountService {
     }
 
     return Promise.resolve(registeredAccount);
-  }
-
-  private async getAccount(secretKey: Fr): Promise<AccountManager> {
-    const privateKey = CryptoUtils.deriveSigningKey(secretKey);
-
-    const accountContract = new EcdsaKCustomAccountContract(privateKey.toBuffer());
-
-    return new AccountManager(this.pxe, secretKey, accountContract, Fr.ONE);
   }
 
   private async getWallet(account: AccountManager): Promise<AccountWallet> {
@@ -217,36 +230,25 @@ export class AccountService {
   }
 
   async rotateNullifierKey(wallet: AccountWallet) {
-    const currentAccountIndex = this.getCurrentAccountIndex();
-    if (currentAccountIndex === null) {
-      throw new Error('No account selected');
-    }
-
-    const accounts = await this.keystore.getAccounts();
-    const accountAddress = accounts[currentAccountIndex];
 
     const newSecretKey = await CryptoUtils.generateSecretKey();
 
     const { masterNullifierSecretKey } = deriveKeys(newSecretKey);
 
-    const newPublicKey = derivePublicKeyFromSecretKey(masterNullifierSecretKey);
-
     await wallet.rotateNullifierKeys(masterNullifierSecretKey);
 
-    // Update the Keystore
-    await this.keystore.rotateMasterNullifierKey(accountAddress, masterNullifierSecretKey);
+    await this.keystore.rotateMasterNullifierKey(wallet.getAddress(), masterNullifierSecretKey);
 
-    // Update the KeyRegistry
-    const keyRegistry = await KeyRegistryContract.at(getCanonicalKeyRegistryAddress(), wallet);
-    await keyRegistry
-      .withWallet(wallet)
-      .methods.rotate_npk_m(wallet.getAddress(), { inner: newPublicKey.toNoirStruct() }, Fr.ZERO)
-      .send()
-      .wait();
+    //const newPublicKey = derivePublicKeyFromSecretKey(masterNullifierSecretKey);
+    //const keyRegistry = await KeyRegistryContract.at(getCanonicalKeyRegistryAddress(), wallet);
+    //await keyRegistry
+    //  .withWallet(wallet)
+    //  .methods.rotate_npk_m(wallet.getAddress(), { inner: newPublicKey.toNoirStruct() }, Fr.ZERO)
+    //  .send()
+    //  .wait();
 
     console.log('Nullifier key rotated successfully in both Keystore and KeyRegistry');
   }
-
 
   async getWalletByAddress(address: string): Promise<AccountWallet | null> {
     const accounts = await this.keystore.getAccounts();

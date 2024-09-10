@@ -41,6 +41,10 @@
           </div>
           <div class="card-content">
             <form id="accountForm" class="form">
+              <div class="form-group">
+                <label for="accountSeed">Seed (optional):</label>
+                <input type="text" id="accountSeed" class="input" placeholder="Enter a custom seed or leave blank for random">
+              </div>
               <button type="submit" class="button primary-button">Create New Account</button>
             </form>
           </div>
@@ -57,7 +61,7 @@
         <div class="card">
           <div class="card-header">
             <h3 class="card-title">Import Account</h3>
-            <p class="card-description">Import an existing Aztec account using your private key.</p>
+            <p class="card-description">Import an existing Aztec account using your secret key.</p>
           </div>
           <div class="card-content">
             <button id="importKeys" class="button secondary-button">Import Keys</button>

@@ -19,6 +19,7 @@ import {
 import { poseidon2HashWithSeparator } from '@aztec/foundation/crypto';
 import { type Bufferable, serializeToBuffer } from '@aztec/foundation/serialize';
 import { CryptoUtils } from './CryptoUtils.js';
+import { deriveSigningKey } from '@aztec/circuits.js';
 
 export class KeyStore {
   #keys = new Map<string, Buffer>();
@@ -82,7 +83,7 @@ export class KeyStore {
     );
     await this.#keys.set(`${account.toString()}-tpk_m_hash`, publicKeys.masterTaggingPublicKey.hash().toBuffer());
 
-    const privateKey = CryptoUtils.deriveSigningKey(sk);
+    const privateKey = deriveSigningKey(sk);
 
     await this.#keys.set(`${account.toString()}-ecdsa_sk`, privateKey.toBuffer());
 
