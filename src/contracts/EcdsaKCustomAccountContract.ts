@@ -16,13 +16,17 @@ export const EcdsaKCustomAccountContractArtifact = loadContractArtifact(EcdsaKCu
  * verified against a secp256k1 public key stored in an immutable encrypted note.
  */
 export class EcdsaKCustomAccountContract extends DefaultAccountContract {
-  constructor(private signingPrivateKey: Buffer) {
+  constructor(private signingPrivateKey: Buffer, private totpSecretHash: Fr) {
     super(EcdsaKCustomAccountContractArtifact);
   }
 
   getDeploymentArgs() {
     const signingPublicKey = new Ecdsa().computePublicKey(this.signingPrivateKey);
-    return [signingPublicKey.subarray(0, 32), signingPublicKey.subarray(32, 64)];
+    return [
+      signingPublicKey.subarray(0, 32),
+      signingPublicKey.subarray(32, 64),
+      this.totpSecretHash
+    ];
   }
 
   getAuthWitnessProvider(_address: CompleteAddress): AuthWitnessProvider {

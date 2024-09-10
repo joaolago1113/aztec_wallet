@@ -13,6 +13,7 @@ import { derivePublicKeyFromSecretKey } from '@aztec/circuits.js';
 import { getEcdsaKWallet } from '@aztec/accounts/ecdsa';
 import { EcdsaKCustomAccountContract } from '../contracts/EcdsaKCustomAccountContract.js';
 import { getCustomEcdsaKWallet } from '../utils/CustomWalletUtils.js';
+import { TOTPUtils } from '../utils/TOTPUtils.js';
 
 
 
@@ -49,7 +50,7 @@ export class AccountService {
     while (true) {
       try {
         secretKey = CryptoUtils.generateSecretKey(seed, nonce);
-        account = await this.getAccount(secretKey);
+        account = await this.setupAccount(secretKey);
         wallet = await this.getWallet(account);
 
         const accountInKeystore = await this.isAccountInKeystore(wallet);
@@ -71,10 +72,16 @@ export class AccountService {
     }
   }
 
-  private async getAccount(secretKey: Fr): Promise<AccountManager> {
+  private async setupAccount(secretKey: Fr): Promise<AccountManager> {
     const privateKey = deriveSigningKey(secretKey);
-    const accountContract = new EcdsaKCustomAccountContract(privateKey.toBuffer());
-    return new AccountManager(this.pxe, secretKey, accountContract, Fr.ONE);
+    const totpSecret = TOTPUtils.generateTOTPSecret();
+    const totpSecretHash = TOTPUtils.hashTOTPSecret(totpSecret);
+    const accountContract = new EcdsaKCustomAccountContract(privateKey.toBuffer(), totpSecretHash);
+    const account = new AccountManager(this.pxe, secretKey, accountContract, Fr.ONE);
+
+    localStorage.setItem(`totpSecret_${account.getAddress().toString()}`, totpSecret);
+
+    return account;
   }
 
   async getSkKeysAtIndex() {
@@ -275,5 +282,17 @@ export class AccountService {
     const accountAddress = accounts[index];
     const privateKeyBuffer = await this.keystore.getEcdsaSecretKey(accountAddress);
     return Fr.fromBuffer(privateKeyBuffer);
+  }
+
+  async validateTOTP(address: AztecAddress, totpCode: number): Promise<boolean> {
+    const totpSecret = localStorage.getItem(`totpSecret_${address.toString()}`);
+    if (!totpSecret) {
+      throw new Error('TOTP secret not found for this account');
+    }
+
+    const totpSecretHash = TOTPUtils.hashTOTPSecret(totpSecret);
+    const currentTimestamp = BigInt(Math.floor(Date.now() / 1000));
+
+    return TOTPUtils.validateTOTPCode(totpCode, totpSecretHash, currentTimestamp);
   }
 }

@@ -20,25 +20,29 @@ contract EcdsaKCustomAccount {
     #[aztec(storage)]
     struct Storage {
         public_key: PrivateImmutable<EcdsaPublicKeyNote>,
+        totp_secret_hash: PrivateImmutable<Field>, // Hash of the TOTP secret
     }
 
     // Creates a new account out of an ECDSA public key to use for signature verification
     #[aztec(private)]
     #[aztec(initializer)]
-    fn constructor(signing_pub_key_x: [u8; 32], signing_pub_key_y: [u8; 32]) {
+    fn constructor(signing_pub_key_x: [u8; 32], signing_pub_key_y: [u8; 32], totp_secret_hash: Field) {
         let this = context.this_address();
         let this_keys = get_current_public_keys(&mut context, this);
-        // Not emitting outgoing for msg_sender here to not have to register keys for the contract through which we
-        // deploy this (typically MultiCallEntrypoint). I think it's ok here as I feel the outgoing here is not that
-        // important.
 
         let mut pub_key_note = EcdsaPublicKeyNote::new(signing_pub_key_x, signing_pub_key_y, this_keys.npk_m.hash());
         storage.public_key.initialize(&mut pub_key_note).emit(encode_and_encrypt_note_with_keys(&mut context, this_keys.ovpk_m, this_keys.ivpk_m, this));
+
+        // Initialize the hashed TOTP secret
+        storage.totp_secret_hash.initialize(&mut totp_secret_hash);
     }
 
     // Note: If you globally change the entrypoint signature don't forget to update default_entrypoint.ts
     #[aztec(private)]
-    fn entrypoint(app_payload: AppPayload, fee_payload: FeePayload) {
+    fn entrypoint(app_payload: AppPayload, fee_payload: FeePayload, totp_code: u32) {
+        // Validate TOTP code before processing the transaction
+        assert(validate_totp_code(totp_code), "Invalid TOTP code!");
+
         let actions = AccountActions::init(&mut context, is_valid_impl);
         actions.entrypoint(app_payload, fee_payload);
     }
@@ -65,12 +69,48 @@ contract EcdsaKCustomAccount {
         }
 
         // Verify payload signature using Ethereum's signing scheme
-        // Note that noir expects the hash of the message/challenge as input to the ECDSA verification.
         let outer_hash_bytes: [u8; 32] = outer_hash.to_be_bytes(32).as_array();
         let hashed_message: [u8; 32] = std::hash::sha256(outer_hash_bytes);
         let verification = std::ecdsa_secp256k1::verify_signature(public_key.x, public_key.y, signature, hashed_message);
         assert(verification == true);
 
         true
+    }
+
+    // Function to verify the TOTP code on-chain
+    fn validate_totp_code(totp_code: u32) -> bool {
+        let storage = Storage::init(&mut context);
+
+        // Load the stored TOTP secret hash
+        let stored_hash = storage.totp_secret_hash.get_note();
+
+        // Calculate the valid TOTP code based on the current time (Unix time)
+        let current_time = context.timestamp();
+        let time_step = current_time / 30; // 30-second time window for TOTP
+
+        // Check the TOTP code for the current and adjacent time steps
+        for i in -2..=2 { // Check 5 time windows: -2, -1, 0, 1, 2
+            let valid_code = generate_totp_code(stored_hash, time_step + i);
+            if totp_code == valid_code {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    // Function to generate TOTP code based on the secret hash and time step
+    fn generate_totp_code(secret_hash: Field, time_step: i64) -> u32 {
+        // Use HMAC-SHA1 to compute the TOTP code (simplified for this example)
+        let hmac_hash = std::hash::hmac_sha1(secret_hash.to_le_bytes(32), time_step.to_le_bytes());
+        
+        // Convert the last 4 bytes of the HMAC hash into a 6-digit TOTP code
+        let offset = (hmac_hash[19] & 0xf) as usize;
+        let code = ((hmac_hash[offset] & 0x7f) << 24)
+                 | ((hmac_hash[offset + 1] & 0xff) << 16)
+                 | ((hmac_hash[offset + 2] & 0xff) << 8)
+                 | (hmac_hash[offset + 3] & 0xff);
+
+        code % 1000000 // Return a 6-digit code
     }
 }

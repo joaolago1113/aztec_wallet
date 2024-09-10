@@ -579,7 +579,15 @@ export class UIManager {
         return;
       }
 
-      const { recipient, amount, isPrivate } = result;
+      const { recipient, amount, isPrivate, totpCode } = result;
+
+      // Validate TOTP code
+      const isValidTOTP = await this.accountService.validateTOTP(currentWallet.getAddress(), totpCode);
+      if (!isValidTOTP) {
+        alert('Invalid TOTP code. Please try again.');
+        return;
+      }
+
       const toAddress = AztecAddress.fromString(recipient);
 
       // Check if the recipient address is registered
@@ -630,7 +638,7 @@ export class UIManager {
     }
   }
 
-  private showSendTokenModal(token: { name: string; symbol: string }): Promise<{ recipient: string; amount: string; isPrivate: boolean } | null> {
+  private showSendTokenModal(token: { name: string; symbol: string }): Promise<{ recipient: string; amount: string; isPrivate: boolean; totpCode: number } | null> {
     return new Promise((resolve) => {
       const modal = document.createElement('div');
       modal.className = 'modal';
@@ -661,6 +669,10 @@ export class UIManager {
                 </label>
               </div>
             </div>
+            <div class="form-group">
+              <label for="totpCode">TOTP Code:</label>
+              <input class="input" type="number" id="totpCode" required>
+            </div>
             <div class="modal-actions">
               <button type="submit" id="proceedSend" class="button primary-button">Proceed</button>
               <button type="button" id="cancelSend" class="button secondary-button">Cancel</button>
@@ -677,8 +689,9 @@ export class UIManager {
         const recipient = (document.getElementById('recipient') as HTMLInputElement).value;
         const amount = (document.getElementById('amount') as HTMLInputElement).value;
         const isPrivate = (document.getElementById('privateTransfer') as HTMLInputElement).checked;
+        const totpCode = parseInt((document.getElementById('totpCode') as HTMLInputElement).value, 10);
         document.body.removeChild(modal);
-        resolve({ recipient, amount, isPrivate });
+        resolve({ recipient, amount, isPrivate, totpCode });
       });
 
       modal.querySelector('#cancelSend')?.addEventListener('click', () => {
