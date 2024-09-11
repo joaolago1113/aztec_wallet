@@ -10,3 +10,4 @@ authwit = { git = "https://github.com/AztecProtocol/aztec-packages/", tag = "azt
 ecdsa_public_key_note = { git = "https://github.com/AztecProtocol/aztec-packages/", tag = "aztec-packages-v0.51.0", directory = "noir-projects/noir-contracts/contracts/ecdsa_public_key_note" }
 token_portal_content_hash_lib = { git = "https://github.com/AztecProtocol/aztec-packages/", tag = "aztec-packages-v0.51.0", directory = "noir-projects/noir-contracts/contracts/token_portal_content_hash_lib" }
 token = { git = "https://github.com/AztecProtocol/aztec-packages/", tag = "aztec-packages-v0.51.0", directory = "noir-projects/noir-contracts/contracts/token_contract" }
+types = { git = "https://github.com/AztecProtocol/aztec-packages/", tag = "aztec-packages-v0.51.0", directory = "noir-projects/noir-protocol-circuits/crates/types" }

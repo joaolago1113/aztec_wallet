@@ -1,29 +1,34 @@
 import { Fr } from '@aztec/aztec.js';
-import * as crypto from 'crypto';
+import { hash as blake3Hash } from 'blake3';
+import { randomBytes } from 'crypto';
 
 export class TOTPUtils {
-  static generateTOTPSecret(): string {
-    return crypto.randomBytes(32).toString('base64');
+  static generateTOTPSecret(seed: string | undefined): string {
+    if (!seed) {
+      seed = randomBytes(32).toString('hex');
+    }
+    const hash = blake3Hash(Buffer.from(seed));
+    return hash.toString('base64');
   }
 
-  static hashTOTPSecret(secret: string): Fr {
-    const hash = crypto.createHash('sha256').update(secret).digest();
-    return Fr.fromBuffer(hash);
-  }
-
+  /*
   static generateTOTPCode(secretHash: Fr, timeStep: bigint): number {
-    const hmac = crypto.createHmac('sha1', secretHash.toBuffer());
-    hmac.update(Buffer.from(timeStep.toString(16).padStart(16, '0'), 'hex'));
-    const hmacResult = hmac.digest();
+    // Convert the secret hash and time step into a suitable format for hashing
+    const timeStepBytes = Buffer.from(timeStep.toString(16).padStart(16, '0'), 'hex');
+    const input = Buffer.concat([secretHash.toBuffer(), timeStepBytes]);
 
-    const offset = hmacResult[hmacResult.length - 1] & 0xf;
+    // Use BLAKE3 for hashing
+    const hashResult = blake3Hash(input);
+
+    // Extract the TOTP code from the hash output
+    const offset = hashResult[31] & 0xf;
     const binary =
-      ((hmacResult[offset] & 0x7f) << 24) |
-      ((hmacResult[offset + 1] & 0xff) << 16) |
-      ((hmacResult[offset + 2] & 0xff) << 8) |
-      (hmacResult[offset + 3] & 0xff);
+      ((hashResult[offset] & 0x7f) << 24) |
+      ((hashResult[offset + 1] & 0xff) << 16) |
+      ((hashResult[offset + 2] & 0xff) << 8) |
+      (hashResult[offset + 3] & 0xff);
 
-    return binary % 1000000;
+    return binary % 1000000; // Return a 6-digit code
   }
 
   static validateTOTPCode(providedCode: number, secretHash: Fr, currentTimestamp: bigint): boolean {
@@ -38,4 +43,5 @@ export class TOTPUtils {
 
     return false;
   }
+    */
 }

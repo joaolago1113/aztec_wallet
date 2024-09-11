@@ -50,20 +50,22 @@ export class AccountService {
     while (true) {
       try {
         secretKey = CryptoUtils.generateSecretKey(seed, nonce);
-        account = await this.setupAccount(secretKey);
+        const totpSecret = TOTPUtils.generateTOTPSecret(seed);
+        //const totpSecretHash = TOTPUtils.hashTOTPSecret(totpSecret);
+        account = await this.setupAccount(secretKey, Buffer.from(totpSecret));
         wallet = await this.getWallet(account);
+        const partialAddress = computePartialAddress(account.getInstance());
 
         const accountInKeystore = await this.isAccountInKeystore(wallet);
 
         if (!accountInKeystore) {
-          await this.addAccountToKeystore(account, secretKey);
+          await this.keystore.addAccount(secretKey, partialAddress, totpSecret.toString());
           const accounts = await this.keystore.getAccounts();
           this.currentAccountIndex = accounts.length - 1;
           this.saveCurrentAccountIndex();
-          return; // Successfully created and added the account
+          return;
         }
 
-        // If we're here, the account exists, so we'll try again with a new nonce
         nonce++;
       } catch (error) {
         console.error('Error creating account:', error);
@@ -72,15 +74,10 @@ export class AccountService {
     }
   }
 
-  private async setupAccount(secretKey: Fr): Promise<AccountManager> {
+  private async setupAccount(secretKey: Fr, totpSecretHash: Buffer): Promise<AccountManager> {
     const privateKey = deriveSigningKey(secretKey);
-    const totpSecret = TOTPUtils.generateTOTPSecret();
-    const totpSecretHash = TOTPUtils.hashTOTPSecret(totpSecret);
     const accountContract = new EcdsaKCustomAccountContract(privateKey.toBuffer(), totpSecretHash);
     const account = new AccountManager(this.pxe, secretKey, accountContract, Fr.ONE);
-
-    localStorage.setItem(`totpSecret_${account.getAddress().toString()}`, totpSecret);
-
     return account;
   }
 
@@ -121,7 +118,8 @@ export class AccountService {
 
     const ecdsaSkBuffer = await this.keystore.getEcdsaSecretKey(accountAddress);
     const ecdsaSk = Fr.fromBuffer(ecdsaSkBuffer);
-    const ecdsaKWallet = await getCustomEcdsaKWallet(this.pxe, accountAddress, ecdsaSk.toBuffer());
+    const totpSecret = await this.keystore.getTOTPSecret(accountAddress);
+    const ecdsaKWallet = await getCustomEcdsaKWallet(this.pxe, accountAddress, ecdsaSk.toBuffer(), totpSecret!);
 
     return ecdsaKWallet;
   }
@@ -161,25 +159,11 @@ export class AccountService {
     return accounts.some(account => account.toString() === accountAddress.toString());
   }
 
-  private async addAccountToKeystore(account: AccountManager, secretKey: Fr) {
-    const partialAddress = computePartialAddress(account.getInstance());
-    await this.keystore.addAccount(secretKey, partialAddress);
-  }
-
-  /*
-  async getSecretKeyKeystore(index: number = this.currentAccountIndex ?? 0): Promise<Fr> {
-    const accounts = await this.keystore.getAccounts();
-    const accountAddress = accounts[index];
   
-    return await this.keystore.getSecretKey(accountAddress);
-  }
-  */
-
   async getAccounts(): Promise<Fr[]> {
     await this.validateCurrentAccountIndex();
     return this.keystore.getAccounts();
   }
-
   getCurrentAccountIndex(): number | null {
     return this.currentAccountIndex;
   }
@@ -267,8 +251,9 @@ export class AccountService {
 
     const accountAddress = accounts[index];
     const ecdsaSkBuffer = await this.keystore.getEcdsaSecretKey(accountAddress);
+    const TOTPSecret = await this.keystore.getTOTPSecret(accountAddress);
     const ecdsaSk = Fr.fromBuffer(ecdsaSkBuffer);
-    return getCustomEcdsaKWallet(this.pxe, accountAddress, ecdsaSk.toBuffer());
+    return getCustomEcdsaKWallet(this.pxe, accountAddress, ecdsaSk.toBuffer(), TOTPSecret);
   }
 
   async getPrivateKey(address: string): Promise<Fr> {
@@ -284,15 +269,17 @@ export class AccountService {
     return Fr.fromBuffer(privateKeyBuffer);
   }
 
+  /*
   async validateTOTP(address: AztecAddress, totpCode: number): Promise<boolean> {
-    const totpSecret = localStorage.getItem(`totpSecret_${address.toString()}`);
+    const totpSecret = await this.keystore.getTOTPSecret(address);
     if (!totpSecret) {
       throw new Error('TOTP secret not found for this account');
     }
 
-    const totpSecretHash = TOTPUtils.hashTOTPSecret(totpSecret);
+    //const totpSecretHash = TOTPUtils.hashTOTPSecret(totpSecret);
     const currentTimestamp = BigInt(Math.floor(Date.now() / 1000));
 
-    return TOTPUtils.validateTOTPCode(totpCode, totpSecretHash, currentTimestamp);
+    return TOTPUtils.validateTOTPCode(totpCode, Fr.fromBuffer(Buffer.from(totpSecret)), currentTimestamp);
   }
+    */
 }

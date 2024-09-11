@@ -45,9 +45,10 @@ export class KeyStore {
    * Adds an account to the key store from the provided secret key.
    * @param sk - The secret key of the account.
    * @param partialAddress - The partial address of the account.
+   * @param totpSecret - The TOTP secret for the account.
    * @returns The account's complete address.
    */
-  public async addAccount(sk: Fr, partialAddress: PartialAddress): Promise<CompleteAddress> {
+  public async addAccount(sk: Fr, partialAddress: PartialAddress, totpSecret: string): Promise<CompleteAddress> {
     const {
       masterNullifierSecretKey,
       masterIncomingViewingSecretKey,
@@ -86,6 +87,7 @@ export class KeyStore {
     const privateKey = deriveSigningKey(sk);
 
     await this.#keys.set(`${account.toString()}-ecdsa_sk`, privateKey.toBuffer());
+    await this.#keys.set(`${account.toString()}-totp_secret`, Buffer.from(totpSecret));
 
     this.saveToLocalStorage();
     return Promise.resolve(new CompleteAddress(account, publicKeys, partialAddress));
@@ -408,5 +410,15 @@ export class KeyStore {
       await this.#keys.delete(key);
     }
     this.saveToLocalStorage();
+  }
+
+  /**
+   * Retrieves the TOTP secret for a given account.
+   * @param account - The AztecAddress of the account.
+   * @returns A Promise that resolves to the TOTP secret as a string, or null if not found.
+   */
+  public async getTOTPSecret(account: AztecAddress): Promise<string | null> {
+    const totpSecretBuffer = await this.#keys.get(`${account.toString()}-totp_secret`);
+    return totpSecretBuffer ? totpSecretBuffer.toString() : null;
   }
 }
