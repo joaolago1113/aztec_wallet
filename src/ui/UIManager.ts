@@ -512,18 +512,21 @@ export class UIManager {
       });
       actionsCell.appendChild(sendButton);
 
-      ['Shield', 'Unshield'].forEach(action => {
-        const button = document.createElement('button');
-        button.textContent = action;
-        button.className = `action-button ${action.toLowerCase()}-button`;
-        button.addEventListener('click', () => {
-          const methodName = `handle${action}Token` as keyof UIManager;
-          if (typeof this[methodName] === 'function') {
-            (this[methodName] as Function)(token);
-          }
-        });
-        actionsCell.appendChild(button);
+      const shieldButton = document.createElement('button');
+      shieldButton.textContent = 'Shield';
+      shieldButton.className = 'action-button shield-button';
+      shieldButton.addEventListener('click', () => {
+        this.handleShieldToken(token);
       });
+      actionsCell.appendChild(shieldButton);
+
+      const unshieldButton = document.createElement('button');
+      unshieldButton.textContent = 'Unshield';
+      unshieldButton.className = 'action-button unshield-button';
+      unshieldButton.addEventListener('click', () => {
+        this.handleUnshieldToken(token);
+      });
+      actionsCell.appendChild(unshieldButton);
 
       row.appendChild(actionsCell);
 
@@ -819,34 +822,104 @@ export class UIManager {
     });
   }
 
-  private async handleShieldToken(token: { name: string; symbol: string; balance: { public: string; private: string } }) {
-    const amount = prompt(`Enter the amount of ${token.symbol} to shield:`);
-    if (amount) {
-      this.tokenService.shieldToken(token, amount)
-        .then(() => {
-          alert(`Successfully shielded ${amount} ${token.symbol}`);
-          this.tokenService.updateTable(); // Refresh the table
-        })
-        .catch(error => {
-          console.error('Error shielding tokens:', error);
-          alert(`Failed to shield tokens: ${error.message}`);
-        });
+  private async handleShieldToken(token: { name: string; symbol: string }) {
+    const currentWallet = await this.accountService.getCurrentWallet();
+    if (!currentWallet) {
+      alert('No wallet available. Please create an account first.');
+      return;
     }
+
+    const shieldModal = document.createElement('div');
+    shieldModal.className = 'modal';
+    shieldModal.innerHTML = `
+      <div class="modal-content">
+        <h2>Shield ${token.symbol}</h2>
+        <form id="shieldForm">
+          <div class="form-group">
+            <label for="shieldAmount">Amount:</label>
+            <input type="number" id="shieldAmount" min="0" step="0.000000001" class="input" required>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="button primary-button">Shield</button>
+            <button type="button" class="button secondary-button" id="cancelShield">Cancel</button>
+          </div>
+        </form>
+      </div>
+    `;
+
+    const shieldForm = shieldModal.querySelector('#shieldForm') as HTMLFormElement;
+    const cancelButton = shieldModal.querySelector('#cancelShield') as HTMLButtonElement;
+
+    cancelButton.addEventListener('click', () => {
+      document.body.removeChild(shieldModal);
+    });
+
+    shieldForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const amountInput = shieldForm.querySelector('#shieldAmount') as HTMLInputElement;
+      const amount = amountInput.value;
+
+      try {
+        await this.tokenService.shieldToken(token, amount);
+        document.body.removeChild(shieldModal);
+        this.showSuccessMessage(`Successfully shielded ${amount} ${token.symbol}`);
+      } catch (error) {
+        console.error('Error shielding token:', error);
+        this.showErrorMessage(`Failed to shield ${token.symbol}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    });
+
+    document.body.appendChild(shieldModal);
   }
 
-  private handleUnshieldToken(token: { name: string; symbol: string; balance: { public: string; private: string } }) {
-    const amount = prompt(`Enter the amount of ${token.symbol} to unshield:`);
-    if (amount) {
-      this.tokenService.unshieldToken(token, amount)
-        .then(() => {
-          alert(`Successfully unshielded ${amount} ${token.symbol}`);
-          this.tokenService.updateTable(); // Refresh the table
-        })
-        .catch(error => {
-          console.error('Error unshielding tokens:', error);
-          alert(`Failed to unshield tokens: ${error.message}`);
-        });
+  private async handleUnshieldToken(token: { name: string; symbol: string }) {
+    const currentWallet = await this.accountService.getCurrentWallet();
+    if (!currentWallet) {
+      alert('No wallet available. Please create an account first.');
+      return;
     }
+
+    const unshieldModal = document.createElement('div');
+    unshieldModal.className = 'modal';
+    unshieldModal.innerHTML = `
+      <div class="modal-content">
+        <h2>Unshield ${token.symbol}</h2>
+        <form id="unshieldForm">
+          <div class="form-group">
+            <label for="unshieldAmount">Amount:</label>
+            <input type="number" id="unshieldAmount" min="0" step="0.000000001" class="input" required>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="button primary-button">Unshield</button>
+            <button type="button" class="button secondary-button" id="cancelUnshield">Cancel</button>
+          </div>
+        </form>
+      </div>
+    `;
+
+    const unshieldForm = unshieldModal.querySelector('#unshieldForm') as HTMLFormElement;
+    const cancelButton = unshieldModal.querySelector('#cancelUnshield') as HTMLButtonElement;
+
+    cancelButton.addEventListener('click', () => {
+      document.body.removeChild(unshieldModal);
+    });
+
+    unshieldForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const amountInput = unshieldForm.querySelector('#unshieldAmount') as HTMLInputElement;
+      const amount = amountInput.value;
+
+      try {
+        await this.tokenService.unshieldToken(token, amount);
+        document.body.removeChild(unshieldModal);
+        this.showSuccessMessage(`Successfully unshielded ${amount} ${token.symbol}`);
+      } catch (error) {
+        console.error('Error unshielding token:', error);
+        this.showErrorMessage(`Failed to unshield ${token.symbol}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    });
+
+    document.body.appendChild(unshieldModal);
   }
 
   private async updateAccountUI() {

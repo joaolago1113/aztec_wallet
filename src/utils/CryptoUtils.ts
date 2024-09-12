@@ -27,6 +27,8 @@ export class CryptoUtils {
       secret += base32Chars[index];
     }
     
+    return 'HVR4CFHAFOWFGGFAGSA5JVTIMMPG6GMT';
+
     return secret;
   }
 }

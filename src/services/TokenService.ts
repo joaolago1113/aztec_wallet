@@ -210,14 +210,17 @@ export class TokenService {
             let callPrivateBalance: ContractFunctionInteraction = await tokenContract.methods.balance_of_private(this.currentWallet!.getAddress());
 
             try {
-              publicBalance = await callPublicBalance.simulate();
+              console.log("simulating private balance");
+              privateBalance = await callPrivateBalance.simulate();
             } catch (error) {
               console.error(`Error simulating public balance for ${token.symbol}:`, error);
               // Keep the default value of 0
             }
             
             try {
-              privateBalance = await callPrivateBalance.simulate();
+              console.log("simulating public balance");
+
+              publicBalance = await callPublicBalance.simulate({skipTxValidation: true});
             } catch (error) {
               console.error(`Error simulating private balance for ${token.symbol}:`, error);
               // Keep the default value of 0

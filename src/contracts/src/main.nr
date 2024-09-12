@@ -65,7 +65,7 @@ contract EcdsaKCustomAccount {
         let mut hotp_secret = storage.hotp_secret.get_note().note;
 
         // Load auth witness
-        let witness: [Field; 64] = unsafe {
+        let witness: [Field; 68] = unsafe {
             get_auth_witness(outer_hash)
         };
         let mut signature: [u8; 64] = [0; 64];
@@ -82,7 +82,7 @@ contract EcdsaKCustomAccount {
         assert(verification == true, "Invalid ECDSA signature");
 
         // Extract HOTP code from the witness
-        let hotp_code = (witness[64] as u32) | ((witness[65] as u32) << 8) | ((witness[66] as u32) << 16) | ((witness[67] as u32) << 24);
+        let hotp_code = (witness[67] as u32) | ((witness[66] as u32) << 8) | ((witness[65] as u32) << 16) | ((witness[64] as u32) << 24);
 
         let hotp_secret_bytes: [u8; 20] = hotp_secret.value.to_be_bytes();
 
@@ -99,8 +99,8 @@ contract EcdsaKCustomAccount {
         true
     }
 
-    #[aztec(private)]
-    fn generate_hotp_code(key: [u8], counter: u64) -> pub u32 {
+    #[contract_library_method]
+    fn generate_hotp_code(key: [u8; 20], counter: u64) -> u32 {
 
         let mut counter_bytes: [u8; 8] = [0; 8];
 
@@ -109,7 +109,6 @@ contract EcdsaKCustomAccount {
         }
 
         let hmac_result = hmac_sha256(key, counter_bytes);
-
         let offset = (hmac_result[31] & 0x0f) as u32;
         let binary = ((hmac_result[offset] & 0x7f) as u32) << 24
             | (hmac_result[offset + 1] as u32) << 16
@@ -121,25 +120,10 @@ contract EcdsaKCustomAccount {
         result
     }
 
-    #[aztec(private)]
-    fn hmac_sha256(mut key: [u8], data: [u8; 8]) -> pub [u8; 32] {
+    #[contract_library_method]
+    fn hmac_sha256(mut key: [u8; 20], data: [u8; 8]) -> [u8; 32] {
 
         let mut key_copy: [u8; 64] = [0; 64];
-
-        let block_size = 64;
-
-        let key_len = key.len();
-
-        if key_len > block_size {
-
-            let mut key_aux: [u8; 20] = [0; 20];
-
-            for i in 0..20 {
-                key_aux[i] = key[i];
-            }
-
-            key = std::hash::sha256(key_aux);
-        }
 
         for i in 0..key.len() {
             key_copy[i] = key[i];
@@ -181,8 +165,8 @@ contract EcdsaKCustomAccount {
         final_hash
     }
 
-    #[aztec(private)]
-    fn bytes_le_to_field(bytes: [u8; 20]) -> pub Field {
+    #[contract_library_method]
+    fn bytes_le_to_field(bytes: [u8; 20]) -> Field {
         let mut field_value: Field = 0;
         let mut base: Field = 1;
 

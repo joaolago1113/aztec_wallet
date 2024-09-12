@@ -68,9 +68,9 @@ export class EcdsaKCustomAccountContract extends DefaultAccountContract {
 class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
   constructor(private signingPrivateKey: Buffer) {}
 
-  async createAuthWit(messageHash: Fr): Promise<AuthWitness> {
+async createAuthWit(messageHash: Fr): Promise<AuthWitness> {
 
-    const totpCode = await this.promptForTOTPCode();
+    let totpCode = await this.promptForHOTPCode();
 
     const ecdsa = new Ecdsa();
     const signature = ecdsa.constructSignature(messageHash.toBuffer(), this.signingPrivateKey);
@@ -78,20 +78,27 @@ class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
     const combinedSignature = new Uint8Array(signature.r.length + signature.s.length + 4);
     combinedSignature.set(signature.r, 0);
     combinedSignature.set(signature.s, 32);
-    combinedSignature.set(new Uint8Array(new Uint32Array([totpCode]).buffer), 64);
+    
+    // Convert HOTP code to 4 bytes (32 bits)
+    const hotpBytes = new Uint8Array(4);
+    for (let i = 3; i >= 0; i--) {
+        hotpBytes[i] = totpCode % 256;
+        totpCode = Math.floor(totpCode / 256);
+    }
+    combinedSignature.set(hotpBytes, 64);
 
     return Promise.resolve(new AuthWitness(messageHash, [...combinedSignature]));
   }
 
-  private async promptForTOTPCode(): Promise<number> {
+  private async promptForHOTPCode(): Promise<number> {
     return new Promise((resolve) => {
-      const totpCode = prompt("Please enter your TOTP code:");
+      const totpCode = prompt("Please enter your 6-digit HOTP code:");
       if (totpCode === null) {
-        throw new Error("TOTP code is required");
+        throw new Error("HOTP code is required");
       }
       const parsedCode = parseInt(totpCode, 10);
-      if (isNaN(parsedCode) || parsedCode < 0 || parsedCode > 999999) {
-        throw new Error("Invalid TOTP code. Please enter a 6-digit number.");
+      if (isNaN(parsedCode) || parsedCode < 0 || parsedCode > 999999 || totpCode.length !== 6) {
+        throw new Error("Invalid HOTP code. Please enter a 6-digit number.");
       }
       resolve(parsedCode);
     });
