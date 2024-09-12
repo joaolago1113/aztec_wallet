@@ -417,8 +417,11 @@ export class KeyStore {
    * @param account - The AztecAddress of the account.
    * @returns A Promise that resolves to the TOTP secret as a string, or null if not found.
    */
-  public async getTOTPSecret(account: AztecAddress): Promise<string | null> {
+  public async getTOTPSecret(account: AztecAddress): Promise<string> {
     const totpSecretBuffer = await this.#keys.get(`${account.toString()}-totp_secret`);
-    return totpSecretBuffer ? totpSecretBuffer.toString() : null;
+    if (!totpSecretBuffer) {
+      throw new Error(`TOTP secret not found for account ${account.toString()}`);
+    }
+    return totpSecretBuffer.toString();
   }
 }

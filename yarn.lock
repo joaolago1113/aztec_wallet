@@ -503,19 +503,6 @@
   resolved "https://registry.yarnpkg.com/@bcoe/v8-coverage/-/v8-coverage-0.2.3.tgz#75a2e8b51cb758a7553d6804a5932d7aace75c39"
   integrity sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw==
 
-"@c4312/blake3-internal@2.1.7":
-  version "3.0.0"
-  resolved "https://registry.yarnpkg.com/@c4312/blake3-internal/-/blake3-internal-3.0.0.tgz#ed327913133d2e1874d6cb1af2c94dc3c1b6f9ec"
-  integrity sha512-USnabcn5uQDbEEryzjK4F3L7HVbMsWtqkTjDbZ/zyMp2vXwlOVnYZbn2WEGx+RmN84U5S1dTe1+RI0fKBWxQsA==
-
-"@c4312/blake3-native@2.1.7":
-  version "3.0.0"
-  resolved "https://registry.yarnpkg.com/@c4312/blake3-native/-/blake3-native-3.0.0.tgz#b2de7ecac2783f8f04d936ad1544fc7a4a5035f7"
-  integrity sha512-DIabSQJ03G+wVQlO+BtWpVg5PXbfkuPfUJ4vVp26m4nMkpskNvZ8cTQAloim8oLRDBGV+X0YmE7kZXSNf/uqKQ==
-  dependencies:
-    "@c4312/blake3-internal" "2.1.7"
-    node-addon-api "^5.0.0"
-
 "@cspotcode/source-map-support@^0.8.0":
   version "0.8.1"
   resolved "https://registry.yarnpkg.com/@cspotcode/source-map-support/-/source-map-support-0.8.1.tgz#00629c35a688e05a88b1cda684fb9d5e73f000a1"
@@ -3237,22 +3224,6 @@ bl@^4.0.3:
     inherits "^2.0.4"
     readable-stream "^3.4.0"
 
-blake3-wasm@2.1.7:
-  version "3.0.0"
-  resolved "https://registry.yarnpkg.com/blake3-wasm/-/blake3-wasm-3.0.0.tgz#854d107b8357870b539cc9427baaaf407fdb9638"
-  integrity sha512-X410nN2AIX6k8gHQmXruQ9YV3U8fe7ZrfLMp88qBcGx5oEIGzz305HvquXoSTPdaR74EA99KHBTb8El9q0vjqQ==
-  dependencies:
-    "@c4312/blake3-internal" "2.1.7"
-
-blake3@^3.0.0:
-  version "3.0.0"
-  resolved "https://registry.yarnpkg.com/blake3/-/blake3-3.0.0.tgz#67edcefd542622ce2d83dd3b77a57f3cbf54d3ea"
-  integrity sha512-59iHKatHHQHKYyzGUEZt4y2J3Pj1krKeFj3u+ALdugADLop9aLTRqd5oFc61sHeFtedvq/sNMD+nukco7NL8qA==
-  dependencies:
-    blake3-wasm "2.1.7"
-  optionalDependencies:
-    "@c4312/blake3-native" "2.1.7"
-
 bn.js@4.11.8:
   version "4.11.8"
   resolved "https://registry.yarnpkg.com/bn.js/-/bn.js-4.11.8.tgz#2cde09eb5ee341f484746bb0309b3253b1b1442f"
@@ -4958,6 +4929,11 @@ hey-listen@^1.0.8:
   resolved "https://registry.yarnpkg.com/hey-listen/-/hey-listen-1.0.8.tgz#8e59561ff724908de1aa924ed6ecc84a56a9aa68"
   integrity sha512-COpmrF2NOg4TBWUJ5UVyaCU2A88wEMkUPK4hNqyCkqHbxT92BbvfjoSozkAIIm6XhicGlJHhFdullInrdhwU8Q==
 
+hi-base32@^0.5.1:
+  version "0.5.1"
+  resolved "https://registry.yarnpkg.com/hi-base32/-/hi-base32-0.5.1.tgz#1279f2ddae2673219ea5870c2121d2a33132857e"
+  integrity sha512-EmBBpvdYh/4XxsnUybsPag6VikPYnN30td+vQk+GI3qpahVEG9+gTkG0aXVxTjBqQ5T6ijbWIu77O+C5WFWsnA==
+
 highlight.js@^10.7.1:
   version "10.7.3"
   resolved "https://registry.yarnpkg.com/highlight.js/-/highlight.js-10.7.3.tgz#697272e3991356e40c3cac566a74eef681756531"
@@ -6515,11 +6491,6 @@ node-abi@^3.3.0:
   integrity sha512-bLn/fU/ALVBE9wj+p4Y21ZJWYFjUXLXPi/IewyLZkx3ApxKDNBWCKdReeKOtD8dWpOdDCeMyLh6ZewzcLsG2Nw==
   dependencies:
     semver "^7.3.5"
-
-node-addon-api@^5.0.0:
-  version "5.1.0"
-  resolved "https://registry.yarnpkg.com/node-addon-api/-/node-addon-api-5.1.0.tgz#49da1ca055e109a23d537e9de43c09cca21eb762"
-  integrity sha512-eh0GgfEkpnoWDq+VY8OyvYhFEzBk6jIYbRKdIlyTiAXIVJ8PyBaKb0rp7oDtoddbdoHWhq8wwr+XZ81F1rpNdA==
 
 node-addon-api@^7.0.0:
   version "7.1.1"

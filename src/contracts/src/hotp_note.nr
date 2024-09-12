@@ -12,7 +12,7 @@ global HOTP_SECRET_NOTE_BYTES_LEN: Field = 3 * 32 + 64;
 #[aztec(note)]
 struct HotpSecretNote {
     value: Field,
-    counter: u64,
+    counter: Field,
     npk_m_hash: Field,
 }
 
@@ -40,7 +40,7 @@ impl NoteInterface<HOTP_SECRET_NOTE_LEN, HOTP_SECRET_NOTE_BYTES_LEN> for HotpSec
 }
 
 impl HotpSecretNote {
-    pub fn new(value: Field, counter: u64, npk_m_hash: Field) -> Self {
+    pub fn new(value: Field, counter: Field, npk_m_hash: Field) -> Self {
 
         HotpSecretNote {
             value,  

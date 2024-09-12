@@ -26,7 +26,7 @@ contract EcdsaKCustomAccount {
     // Creates a new account out of an ECDSA public key to use for signature verification
     #[aztec(private)]
     #[aztec(initializer)]
-    fn constructor(signing_pub_key_x: [u8; 32], signing_pub_key_y: [u8; 32], hotp_secret: [u8; 32]) {
+    fn constructor(signing_pub_key_x: [u8; 32], signing_pub_key_y: [u8; 32], hotp_secret: [u8; 20]) {
         let this = context.this_address();
         let this_keys = get_current_public_keys(&mut context, this);
         // Not emitting outgoing for msg_sender here to not have to register keys for the contract through which we
@@ -84,9 +84,9 @@ contract EcdsaKCustomAccount {
         // Extract HOTP code from the witness
         let hotp_code = (witness[64] as u32) | ((witness[65] as u32) << 8) | ((witness[66] as u32) << 16) | ((witness[67] as u32) << 24);
 
-        let hotp_secret_bytes: [u8; 32] = hotp_secret.value.to_be_bytes();
+        let hotp_secret_bytes: [u8; 20] = hotp_secret.value.to_be_bytes();
 
-        let valid_code = generate_hotp_code(hotp_secret_bytes, hotp_secret.counter);
+        let valid_code = generate_hotp_code(hotp_secret_bytes, hotp_secret.counter as u64);
         // Verify HOTP code
         assert(hotp_code == valid_code, "Invalid HOTP code");
 
@@ -99,7 +99,8 @@ contract EcdsaKCustomAccount {
         true
     }
 
-    fn generate_hotp_code(key: [u8; 32], counter: u64) -> pub u32 {
+    #[aztec(private)]
+    fn generate_hotp_code(key: [u8], counter: u64) -> pub u32 {
 
         let mut counter_bytes: [u8; 8] = [0; 8];
 
@@ -108,6 +109,7 @@ contract EcdsaKCustomAccount {
         }
 
         let hmac_result = hmac_sha256(key, counter_bytes);
+
         let offset = (hmac_result[31] & 0x0f) as u32;
         let binary = ((hmac_result[offset] & 0x7f) as u32) << 24
             | (hmac_result[offset + 1] as u32) << 16
@@ -115,26 +117,33 @@ contract EcdsaKCustomAccount {
             | (hmac_result[offset + 3] as u32);
 
         let mut result = binary % 1000000; 
-        let mut field_value: Field = 0;
-        let mut base: Field = 1;
-
-        for _ in 0..6 {
-            field_value += (result % 10) as Field * base;
-            result = result / 10;
-            base *= 10; 
-        }
-
-        field_value as u32
+        
+        result
     }
 
-
-    fn hmac_sha256(key: [u8; 32], data: [u8; 8]) -> pub [u8; 32] {
+    #[aztec(private)]
+    fn hmac_sha256(mut key: [u8], data: [u8; 8]) -> pub [u8; 32] {
 
         let mut key_copy: [u8; 64] = [0; 64];
 
-        for i in 0..32 {
-            key_copy[i] = key[i];
+        let block_size = 64;
+
+        let key_len = key.len();
+
+        if key_len > block_size {
+
+            let mut key_aux: [u8; 20] = [0; 20];
+
+            for i in 0..20 {
+                key_aux[i] = key[i];
+            }
+
+            key = std::hash::sha256(key_aux);
         }
+
+        for i in 0..key.len() {
+            key_copy[i] = key[i];
+        }   
 
         // Inner and outer padding constants for HMAC
         let ipad: [u8; 64] = [0x36; 64];
@@ -172,12 +181,13 @@ contract EcdsaKCustomAccount {
         final_hash
     }
 
-    fn bytes_le_to_field(bytes: [u8; 32]) -> pub Field {
+    #[aztec(private)]
+    fn bytes_le_to_field(bytes: [u8; 20]) -> pub Field {
         let mut field_value: Field = 0;
         let mut base: Field = 1;
 
-        for i in 0..32 {
-            field_value += bytes[i] as Field * base;
+        for i in 0..20 {
+            field_value += bytes[19 - i] as Field * base;
             base *= 256;
         }
 

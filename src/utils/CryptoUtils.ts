@@ -18,8 +18,15 @@ export class CryptoUtils {
     if (!seed) {
       seed = randomBytes(32).toString('hex');
     }
-    const hash = createHash('sha256').update(seed).digest('hex');
-
-    return hash.toString();
+    const base32Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let secret = '';
+    const hash = createHash('sha256').update(seed).digest();
+    
+    for (let i = 0; i < 32; i++) {
+      const index = hash[i % hash.length] % 32;
+      secret += base32Chars[index];
+    }
+    
+    return secret;
   }
 }

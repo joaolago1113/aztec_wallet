@@ -13,8 +13,6 @@ import { derivePublicKeyFromSecretKey } from '@aztec/circuits.js';
 import { getEcdsaKWallet } from '@aztec/accounts/ecdsa';
 import { EcdsaKCustomAccountContract } from '../contracts/EcdsaKCustomAccountContract.js';
 import { getCustomEcdsaKWallet } from '../utils/CustomWalletUtils.js';
-import { TOTPUtils } from '../utils/TOTPUtils.js';
-
 
 
 export class AccountService {

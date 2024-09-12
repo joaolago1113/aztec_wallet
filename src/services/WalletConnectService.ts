@@ -313,13 +313,6 @@ export class WalletConnectService {
           }
 
           const tokenContract = await TokenContract.at(tokenAddress, wallet);
-
-
-          console.log("TokenContract.storage.pending_shields: " + TokenContract.storage.pending_shields.slot);
-
-          console.log("TransparentNote.id; " + TokenContract.notes.TransparentNote.id);
-
-          console.log("amount; " + amount);
           
           const note = new Note([amount, secretHash]);
           const extendedNote = new ExtendedNote(

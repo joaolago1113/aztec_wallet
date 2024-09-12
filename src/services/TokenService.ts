@@ -457,7 +457,7 @@ export class TokenService {
     this.uiManager.updatePendingShieldsList(filteredPendingShieldsData);
   }
 
-  private formatAmount(amount: bigint): string {
+  formatAmount(amount: bigint): string {
     const amountFloat = Number(amount) / 1e9;
     return amountFloat.toFixed(9).replace(/\.?0+$/, '');
   }
