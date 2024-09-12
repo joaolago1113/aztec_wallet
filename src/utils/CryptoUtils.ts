@@ -14,4 +14,12 @@ export class CryptoUtils {
     return new Fr(combinedBigInt % Fr.MODULUS);
   }
 
+  static generateHOTPSecret(seed: string | undefined): string {
+    if (!seed) {
+      seed = randomBytes(32).toString('hex');
+    }
+    const hash = createHash('sha256').update(seed).digest('hex');
+
+    return hash.toString();
+  }
 }

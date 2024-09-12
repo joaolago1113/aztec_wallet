@@ -4,12 +4,11 @@ contract EcdsaKCustomAccount {
 
     use crate::hotp_note::HotpSecretNote;
 
-    use dep::aztec::prelude::{AztecAddress, FunctionSelector, NoteHeader, NoteGetterOptions, PrivateContext, PrivateImmutable, PrivateMutable};
+    use dep::aztec::prelude::{PrivateContext, PrivateImmutable, PrivateMutable};
     use dep::aztec::{
         encrypted_logs::encrypted_note_emission::encode_and_encrypt_note_with_keys,
         keys::getters::get_current_public_keys
     };
-    use dep::std;
 
     use dep::authwit::{
         entrypoint::{app::AppPayload, fee::FeePayload}, account::AccountActions,
@@ -43,11 +42,11 @@ contract EcdsaKCustomAccount {
         storage.hotp_secret.initialize(&mut hotp_note).emit(encode_and_encrypt_note_with_keys(&mut context, this_keys.ovpk_m, this_keys.ivpk_m, this));
     }
 
-    // Note: If you globally change the entrypoint signature don't forget to update default_entrypoint.ts
+    // Note: If you globally change the entrypoint signature don't forget to update account_entrypoint.ts
     #[aztec(private)]
     fn entrypoint(app_payload: AppPayload, fee_payload: FeePayload, cancellable: bool) {
         let actions = AccountActions::init(&mut context, is_valid_impl);
-        actions.entrypoint(app_payload, fee_payload);
+        actions.entrypoint(app_payload, fee_payload, cancellable);
     }
 
     #[aztec(private)]
@@ -60,32 +59,36 @@ contract EcdsaKCustomAccount {
 
     #[contract_library_method]
     fn is_valid_impl(context: &mut PrivateContext, outer_hash: Field) -> bool {
-        // Load public key and HOTP secret hash from storage
+        // Load public key from storage
         let storage = Storage::init(context);
         let public_key = storage.public_key.get_note();
         let mut hotp_secret = storage.hotp_secret.get_note().note;
 
         // Load auth witness
-        let witness: [Field; 68] = get_auth_witness(outer_hash); // Increased to 68 to include HOTP code
+        let witness: [Field; 64] = unsafe {
+            get_auth_witness(outer_hash)
+        };
         let mut signature: [u8; 64] = [0; 64];
         for i in 0..64 {
             signature[i] = witness[i] as u8;
         }
 
+        // Verify payload signature using Ethereum's signing scheme
+        // Note that noir expects the hash of the message/challenge as input to the ECDSA verification.
+        let outer_hash_bytes: [u8; 32] = outer_hash.to_be_bytes();
+        let hashed_message: [u8; 32] = std::hash::sha256(outer_hash_bytes);
+        let verification = std::ecdsa_secp256k1::verify_signature(public_key.x, public_key.y, signature, hashed_message);
+
+        assert(verification == true, "Invalid ECDSA signature");
+
         // Extract HOTP code from the witness
         let hotp_code = (witness[64] as u32) | ((witness[65] as u32) << 8) | ((witness[66] as u32) << 16) | ((witness[67] as u32) << 24);
 
-        let hotp_secret_bytes: [u8; 32] = hotp_secret.value.to_be_bytes(32).as_array();
+        let hotp_secret_bytes: [u8; 32] = hotp_secret.value.to_be_bytes();
 
         let valid_code = generate_hotp_code(hotp_secret_bytes, hotp_secret.counter);
         // Verify HOTP code
         assert(hotp_code == valid_code, "Invalid HOTP code");
-
-        // Verify payload signature using Ethereum's signing scheme
-        let outer_hash_bytes: [u8; 32] = outer_hash.to_be_bytes(32).as_array();
-        let hashed_message: [u8; 32] = std::hash::sha256(outer_hash_bytes);
-        let verification = std::ecdsa_secp256k1::verify_signature(public_key.x, public_key.y, signature, hashed_message);
-        assert(verification == true, "Invalid ECDSA signature");
 
         let this = context.this_address();
         let this_keys = get_current_public_keys(context, this);

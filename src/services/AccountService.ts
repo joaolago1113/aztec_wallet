@@ -50,8 +50,7 @@ export class AccountService {
     while (true) {
       try {
         secretKey = CryptoUtils.generateSecretKey(seed, nonce);
-        const totpSecret = TOTPUtils.generateTOTPSecret(seed);
-        //const totpSecretHash = TOTPUtils.hashTOTPSecret(totpSecret);
+        const totpSecret = CryptoUtils.generateHOTPSecret(seed);
         account = await this.setupAccount(secretKey, Buffer.from(totpSecret));
         wallet = await this.getWallet(account);
         const partialAddress = computePartialAddress(account.getInstance());
