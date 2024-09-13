@@ -52,7 +52,7 @@ export class EcdsaKCustomAccountContract extends DefaultAccountContract {
     const signingPublicKey = new Ecdsa().computePublicKey(this.signingPrivateKey);
 
     const decodedBuffer = base32Decode.asBytes(this.totpSecret.toString());
-
+    
     return [
       signingPublicKey.subarray(0, 32),
       signingPublicKey.subarray(32, 64),
@@ -68,7 +68,7 @@ export class EcdsaKCustomAccountContract extends DefaultAccountContract {
 class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
   constructor(private signingPrivateKey: Buffer) {}
 
-async createAuthWit(messageHash: Fr): Promise<AuthWitness> {
+  async createAuthWit(messageHash: Fr): Promise<AuthWitness> {
 
     let totpCode = await this.promptForHOTPCode();
 
@@ -79,7 +79,6 @@ async createAuthWit(messageHash: Fr): Promise<AuthWitness> {
     combinedSignature.set(signature.r, 0);
     combinedSignature.set(signature.s, 32);
     
-    // Convert HOTP code to 4 bytes (32 bits)
     const hotpBytes = new Uint8Array(4);
     for (let i = 3; i >= 0; i--) {
         hotpBytes[i] = totpCode % 256;

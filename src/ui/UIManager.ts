@@ -91,6 +91,9 @@ export class UIManager {
   private async updateTokensPage() {
     console.log('Updating Tokens page');
     const currentWallet = await this.accountService.getCurrentWallet();
+
+    console.log('currentWallet', currentWallet);
+
     if (currentWallet) {
       try {
         await this.tokenService.updateBalancesForNewAccount(currentWallet);

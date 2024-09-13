@@ -4,7 +4,7 @@ contract EcdsaKCustomAccount {
 
     use crate::hotp_note::HotpSecretNote;
 
-    use dep::aztec::prelude::{PrivateContext, PrivateImmutable, PrivateMutable};
+    use dep::aztec::prelude::{PrivateContext, PrivateImmutable, PrivateMutable };
     use dep::aztec::{
         encrypted_logs::encrypted_note_emission::encode_and_encrypt_note_with_keys,
         keys::getters::get_current_public_keys
@@ -57,6 +57,7 @@ contract EcdsaKCustomAccount {
         actions.verify_private_authwit(inner_hash)
     }
 
+    #[aztec(noinitcheck)]
     #[contract_library_method]
     fn is_valid_impl(context: &mut PrivateContext, outer_hash: Field) -> bool {
         // Load public key from storage
@@ -87,7 +88,7 @@ contract EcdsaKCustomAccount {
         let hotp_secret_bytes: [u8; 20] = hotp_secret.value.to_be_bytes();
 
         let valid_code = generate_hotp_code(hotp_secret_bytes, hotp_secret.counter as u64);
-        // Verify HOTP code
+
         assert(hotp_code == valid_code, "Invalid HOTP code");
 
         let this = context.this_address();

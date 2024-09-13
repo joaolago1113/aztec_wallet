@@ -3,7 +3,7 @@ import { getWallet } from '@aztec/aztec.js/wallet';
 
 import { EcdsaKCustomAccountContract } from '../contracts/EcdsaKCustomAccountContract.js';
 
-export function getCustomEcdsaKWallet(pxe: PXE, address: AztecAddress, signingPrivateKey: Buffer, totpSecret: string): Promise<AccountWallet> {
-  const totpSecretBuffer = Buffer.from(totpSecret);
-  return getWallet(pxe, address, new EcdsaKCustomAccountContract(signingPrivateKey, totpSecretBuffer));
+export function getCustomEcdsaKWallet(pxe: PXE, address: AztecAddress, signingPrivateKey: Buffer): Promise<AccountWallet> {
+
+  return getWallet(pxe, address, new EcdsaKCustomAccountContract(signingPrivateKey, Buffer.from([])));
 }

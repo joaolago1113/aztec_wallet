@@ -56,7 +56,7 @@ export class AccountService {
         const accountInKeystore = await this.isAccountInKeystore(wallet);
 
         if (!accountInKeystore) {
-          await this.keystore.addAccount(secretKey, partialAddress, totpSecret.toString());
+          await this.keystore.addAccount(secretKey, partialAddress);
           const accounts = await this.keystore.getAccounts();
           this.currentAccountIndex = accounts.length - 1;
           this.saveCurrentAccountIndex();
@@ -115,8 +115,7 @@ export class AccountService {
 
     const ecdsaSkBuffer = await this.keystore.getEcdsaSecretKey(accountAddress);
     const ecdsaSk = Fr.fromBuffer(ecdsaSkBuffer);
-    const totpSecret = await this.keystore.getTOTPSecret(accountAddress);
-    const ecdsaKWallet = await getCustomEcdsaKWallet(this.pxe, accountAddress, ecdsaSk.toBuffer(), totpSecret!);
+    const ecdsaKWallet = await getCustomEcdsaKWallet(this.pxe, accountAddress, ecdsaSk.toBuffer());
 
     return ecdsaKWallet;
   }
@@ -248,9 +247,9 @@ export class AccountService {
 
     const accountAddress = accounts[index];
     const ecdsaSkBuffer = await this.keystore.getEcdsaSecretKey(accountAddress);
-    const TOTPSecret = await this.keystore.getTOTPSecret(accountAddress);
     const ecdsaSk = Fr.fromBuffer(ecdsaSkBuffer);
-    return getCustomEcdsaKWallet(this.pxe, accountAddress, ecdsaSk.toBuffer(), TOTPSecret);
+
+    return getCustomEcdsaKWallet(this.pxe, accountAddress, ecdsaSk.toBuffer());
   }
 
   async getPrivateKey(address: string): Promise<Fr> {
@@ -266,17 +265,4 @@ export class AccountService {
     return Fr.fromBuffer(privateKeyBuffer);
   }
 
-  /*
-  async validateTOTP(address: AztecAddress, totpCode: number): Promise<boolean> {
-    const totpSecret = await this.keystore.getTOTPSecret(address);
-    if (!totpSecret) {
-      throw new Error('TOTP secret not found for this account');
-    }
-
-    //const totpSecretHash = TOTPUtils.hashTOTPSecret(totpSecret);
-    const currentTimestamp = BigInt(Math.floor(Date.now() / 1000));
-
-    return TOTPUtils.validateTOTPCode(totpCode, Fr.fromBuffer(Buffer.from(totpSecret)), currentTimestamp);
-  }
-    */
 }
