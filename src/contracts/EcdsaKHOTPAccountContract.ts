@@ -1,13 +1,13 @@
 import { type AuthWitnessProvider } from '@aztec/aztec.js/account';
 import { AuthWitness, type CompleteAddress } from '@aztec/circuit-types';
 import { Ecdsa } from '@aztec/circuits.js/barretenberg';
-import { type ContractArtifact } from '@aztec/foundation/abi';
 import { type Fr } from '@aztec/foundation/fields';
 import { decode as base32Decode } from 'hi-base32';
-
+import { getWallet } from '@aztec/aztec.js/wallet';
+import { PXEFactory } from '../factories/PXEFactory.js';
 import { DefaultAccountContract } from '@aztec/accounts/defaults';
 
-import { type NoirCompiledContract, loadContractArtifact } from '@aztec/aztec.js';
+import { type NoirCompiledContract, loadContractArtifact, Contract, type AztecAddress } from '@aztec/aztec.js';
 
 import EcdsaKCustomAccountContractJson from './target/ecdsa_k_custom_account_contract-EcdsaKCustomAccount.json';
 
@@ -42,7 +42,7 @@ class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
   */
 
 
-export class EcdsaKCustomAccountContract extends DefaultAccountContract {
+export class EcdsaKHOTPAccountContract extends DefaultAccountContract {
   constructor(private signingPrivateKey: Buffer, private totpSecret: Buffer) {
     super(EcdsaKCustomAccountContractArtifact);
   }
@@ -52,7 +52,7 @@ export class EcdsaKCustomAccountContract extends DefaultAccountContract {
     const signingPublicKey = new Ecdsa().computePublicKey(this.signingPrivateKey);
 
     const decodedBuffer = base32Decode.asBytes(this.totpSecret.toString());
-    
+
     return [
       signingPublicKey.subarray(0, 32),
       signingPublicKey.subarray(32, 64),
@@ -61,16 +61,15 @@ export class EcdsaKCustomAccountContract extends DefaultAccountContract {
   }
 
   getAuthWitnessProvider(_address: CompleteAddress): AuthWitnessProvider {
-    return new EcdsaKCustomAuthWitnessProvider(this.signingPrivateKey);
+    return new EcdsaKCustomAuthWitnessProvider(this.signingPrivateKey, this, _address.address);
   }
 }
 
 class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
-  constructor(private signingPrivateKey: Buffer) {}
+  constructor(private signingPrivateKey: Buffer, private accountContract: DefaultAccountContract, private address: AztecAddress) {}
 
   async createAuthWit(messageHash: Fr): Promise<AuthWitness> {
-
-    let totpCode = await this.promptForHOTPCode();
+    let totpCode = await this.showHOTPModal();
 
     const ecdsa = new Ecdsa();
     const signature = ecdsa.constructSignature(messageHash.toBuffer(), this.signingPrivateKey);
@@ -89,17 +88,56 @@ class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
     return Promise.resolve(new AuthWitness(messageHash, [...combinedSignature]));
   }
 
-  private async promptForHOTPCode(): Promise<number> {
+  private async showHOTPModal(): Promise<number> {
+    const pxe = await PXEFactory.getPXEInstance();
+
+    const wallet = await getWallet(pxe, this.address, this.accountContract);
+    const accountContract = await Contract.at(this.address, EcdsaKCustomAccountContractArtifact, wallet);
+    const counter = await accountContract.methods.get_counter().simulate();
+
     return new Promise((resolve) => {
-      const totpCode = prompt("Please enter your 6-digit HOTP code:");
-      if (totpCode === null) {
-        throw new Error("HOTP code is required");
-      }
-      const parsedCode = parseInt(totpCode, 10);
-      if (isNaN(parsedCode) || parsedCode < 0 || parsedCode > 999999 || totpCode.length !== 6) {
-        throw new Error("Invalid HOTP code. Please enter a 6-digit number.");
-      }
-      resolve(parsedCode);
+      const modal = document.createElement('div');
+      modal.className = 'modal';
+      modal.innerHTML = `
+        <div class="modal-content hotp-modal">
+          <h2>Enter HOTP Code</h2>
+          <p class="hotp-counter">Counter: <span>${counter}</span></p>
+          <form id="hotpForm">
+            <div class="form-group">
+              <label for="hotpCode">6-Digit HOTP Code:</label>
+              <input type="text" id="hotpCode" class="input" required pattern="\\d{6}">
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="button primary-button">Submit</button>
+              <button type="button" class="button secondary-button" id="cancelHOTP">Cancel</button>
+            </div>
+          </form>
+        </div>
+      `;
+
+      const hotpForm = modal.querySelector('#hotpForm') as HTMLFormElement;
+      const cancelButton = modal.querySelector('#cancelHOTP') as HTMLButtonElement;
+
+      cancelButton.addEventListener('click', () => {
+        document.body.removeChild(modal);
+        throw new Error('HOTP code entry cancelled');
+      });
+
+      hotpForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const hotpCodeInput = hotpForm.querySelector('#hotpCode') as HTMLInputElement;
+        const hotpCode = hotpCodeInput.value.trim();
+
+        if (hotpCode.length !== 6 || !/^\d+$/.test(hotpCode)) {
+          alert('Please enter a valid 6-digit HOTP code.');
+          return;
+        }
+
+        document.body.removeChild(modal);
+        resolve(parseInt(hotpCode, 10));
+      });
+
+      document.body.appendChild(modal);
     });
   }
 }

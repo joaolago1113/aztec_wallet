@@ -31,6 +31,7 @@
     "@aztec/sdk": "^2.1.97",
     "@shieldswap/wallet-sdk": "0.54.0",
     "@types/node": "^18.7.23",
+    "@types/qrcode-generator": "^1.0.6",
     "@walletconnect/client": "^1.8.0",
     "@walletconnect/sign-client": "^2.15.1",
     "@walletconnect/types": "^2.15.2",

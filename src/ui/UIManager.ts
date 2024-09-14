@@ -2,14 +2,15 @@ import { AccountService } from '../services/AccountService.js';
 import { TokenService } from '../services/TokenService.js';
 import { TokenContract } from '@aztec/noir-contracts.js';
 import { WalletConnectService } from '../services/WalletConnectService.js';
-import { CryptoUtils } from '../utils/CryptoUtils.js';
+import { CONFIG } from '../config.js';
 import { Fr, Note } from "@aztec/aztec.js";
 import { AztecAddress } from '@aztec/circuits.js';
 import { TransactionService } from '../services/TransactionService.js';
 import { PXEFactory } from '../factories/PXEFactory.js';
 import { Transaction } from '../services/TransactionService.js';
-import { TestContract } from '@aztec/noir-contracts.js';
-
+import { CheatCodes } from '@aztec/aztec.js';
+import qrcode from 'qrcode-generator';
+import { KeystoreFactory } from '../factories/KeystoreFactory.js';
 
 interface SimulationResult {
   isPrivate: boolean;
@@ -311,6 +312,7 @@ export class UIManager {
         await this.handleCreateMintImportTokenSubmit(event);
       }
     });
+
   }
 
   private async handleLogout() {
@@ -332,34 +334,113 @@ export class UIManager {
 
   private async createAccountSubmit(event: Event) {
     event.preventDefault();
-    const submitButton = (event.target as HTMLElement).closest('button');
+    const submitButton = event.target as HTMLButtonElement;
+    const form = submitButton.closest('form') as HTMLFormElement;
+
+    const seedInput = form.querySelector('#accountSeed') as HTMLInputElement;
+    const use2FAInput = form.querySelector('#use2FA') as HTMLInputElement;
+
     if (submitButton) {
       submitButton.disabled = true;
       submitButton.textContent = 'Creating...';
     }
 
+    const seed = seedInput?.value || undefined;
+    const use2FA = use2FAInput.checked;
+
     try {
-      const seedInput = document.getElementById('accountSeed') as HTMLInputElement;
-      const seed = seedInput.value.trim();
-      await this.accountService.createAccount(seed);
-      this.updateAccountUI();
+      const { secretKey, hotpSecret } = await this.accountService.createAccount(seed, use2FA);
       
-      const currentWallet = await this.accountService.getCurrentWallet();
-      if (currentWallet) {
-        await this.tokenService.updateBalancesForNewAccount(currentWallet);
+      // Display secret key information
+      this.displaySecretKeyInfo(secretKey);
+
+      if (use2FA && hotpSecret) {
+        this.displayQRCode(hotpSecret);
+      } else {
+        this.showSuccessMessage('Account created successfully!');
       }
 
-      // Clear the seed input after successful account creation
-      seedInput.value = '';
+      // Update the account UI
+      await this.updateAccountUI();
     } catch (error) {
-      console.error('Error during account creation:', error);
-      alert(`Failed to create account: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Error creating account:', error);
+      this.showErrorMessage('Failed to create account. Please try again.');
     } finally {
       if (submitButton) {
         submitButton.disabled = false;
         submitButton.textContent = 'Create New Account';
       }
     }
+  }
+
+  private displaySecretKeyInfo(secretKey: Fr) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+      <div class="modal-content">
+        <h2>Account Created Successfully</h2>
+        <p>Your account has been created with the following secret key:</p>
+        <div class="secret-key-container">
+          <div class="secret-key-overlay">Click to Copy</div>
+          <p class="secret-key input">${secretKey.toString()}</p>
+        </div>
+        <p class="warning">Warning: Save this secret key securely. You won't be able to see it again!</p>
+        <button id="closeSecretKeyModal" class="button primary-button">I've saved the secret key</button>
+      </div>
+    `;
+
+    const secretKeyContainer = modal.querySelector('.secret-key-container') as HTMLElement;
+    const secretKeyOverlay = modal.querySelector('.secret-key-overlay') as HTMLElement;
+    const secretKeyInput = modal.querySelector('.secret-key') as HTMLElement;
+
+    secretKeyContainer.addEventListener('click', () => {
+      navigator.clipboard.writeText(secretKey.toString()).then(() => {
+        secretKeyOverlay.textContent = 'Copied!';
+        setTimeout(() => {
+          secretKeyOverlay.textContent = 'Click to Copy';
+        }, 2000);
+      });
+    });
+
+    secretKeyContainer.addEventListener('mouseover', () => {
+      secretKeyInput.style.filter = 'blur(0)';
+    });
+
+    secretKeyContainer.addEventListener('mouseout', () => {
+      secretKeyInput.style.filter = 'blur(5px)';
+    });
+
+    const closeButton = modal.querySelector('#closeSecretKeyModal') as HTMLButtonElement;
+    closeButton.onclick = () => {
+      document.body.removeChild(modal);
+    };
+
+    document.body.appendChild(modal);
+  }
+
+  private displayQRCode(hotpSecret: string) {
+    const qrCodeModal = document.getElementById('qrCodeModal') as HTMLDivElement;
+    const qrCodeContainer = document.getElementById('qrCode') as HTMLDivElement;
+    const hotpSecretElement = document.getElementById('hotpSecret') as HTMLParagraphElement;
+    const closeButton = document.getElementById('closeQRModal') as HTMLButtonElement;
+
+    // Generate QR code
+    const qr = qrcode(0, 'M');
+    qr.addData(`otpauth://hotp/AztecWallet:${this.accountService.getCurrentAccountIndex()}?secret=${hotpSecret}&algorithm=SHA256&digits=6&counter=0`);
+    qr.make();
+    qrCodeContainer.innerHTML = qr.createImgTag(5);
+
+    // Display HOTP secret
+    hotpSecretElement.textContent = hotpSecret;
+
+    // Show modal
+    qrCodeModal.style.display = 'flex';
+
+    // Handle close button
+    closeButton.onclick = () => {
+      qrCodeModal.style.display = 'none';
+      this.showSuccessMessage('Account created successfully!');
+    };
   }
 
   private async exportKeys(event: Event) {
@@ -377,21 +458,53 @@ export class UIManager {
 
   private async importKeys(event: Event) {
     event.preventDefault();
-    const secretKey = prompt('Enter the secret key:', '0x-your-secret-key-here');
+    const importKeysModal = document.getElementById('importKeysModal') as HTMLDivElement;
+    importKeysModal.style.display = 'flex';
 
-    if(secretKey === null) {
-      return;
-    }
-    if (!secretKey || secretKey.length !== 66) {
-      alert('Invalid secret key. Please enter a 32-byte string in hex format.');
-      return;
-    }
-    try {
-      await this.accountService.createAccount(secretKey);
-      this.updateAccountUI();
-    } catch (error) {
-      console.error('Error during account import:', error);
-    }
+    const importKeysForm = document.getElementById('importKeysForm') as HTMLFormElement;
+    const cancelImportButton = document.getElementById('cancelImport') as HTMLButtonElement;
+    const use2FACheckbox = document.getElementById('importUse2FA') as HTMLInputElement;
+    const secretGroup = document.getElementById('import2FASecretGroup') as HTMLDivElement;
+
+    const handleImportSubmit = async (e: Event) => {
+      e.preventDefault();
+      const secretKeyInput = document.getElementById('importSecretKey') as HTMLInputElement;
+      const use2FA = use2FACheckbox.checked;
+      const secretInput = document.getElementById('import2FASecret') as HTMLInputElement;
+
+      const secretKey = secretKeyInput.value.trim();
+      const secret = use2FA ? secretInput.value.trim() : '';
+
+      if (secretKey.length !== 66) {
+        alert('Invalid secret key. Please enter a 32-byte string in hex format.');
+        return;
+      }
+
+      try {
+        await this.accountService.importAccount(secretKey, use2FA, secret);
+        this.updateAccountUI();
+        importKeysModal.style.display = 'none';
+      } catch (error) {
+        console.error('Error during account import:', error);
+        alert('Failed to import account. Please check the secret key and try again.');
+      }
+    };
+
+    const handleCancelImport = () => {
+      importKeysModal.style.display = 'none';
+    };
+
+    const handleCheckboxChange = () => {
+      if (use2FACheckbox.checked) {
+        secretGroup.style.display = 'block';
+      } else {
+        secretGroup.style.display = 'none';
+      }
+    };
+
+    use2FACheckbox.addEventListener('change', handleCheckboxChange);
+    importKeysForm.addEventListener('submit', handleImportSubmit);
+    cancelImportButton.addEventListener('click', handleCancelImport);
   }
 
   private async handleConnectApp() {
@@ -723,17 +836,36 @@ export class UIManager {
         fromBalance = await tokenContract.methods.balance_of_private(fromAddress).simulate();
         toBalance = await tokenContract.methods.balance_of_private(toAddress).simulate();
       } else {
+
+
+
         call = tokenContract.methods.transfer_public(fromAddress, toAddress, amount, 0);
-        fromBalance = await tokenContract.methods.balance_of_public(fromAddress).simulate();
-        toBalance = await tokenContract.methods.balance_of_public(toAddress).simulate();
+
+        let ownerPublicBalanceSlot: Fr;
+
+        const pxe = await PXEFactory.getPXEInstance();
+
+        const cc = await CheatCodes.create(CONFIG.l1RpcUrl, pxe);
+
+        ownerPublicBalanceSlot = cc.aztec.computeSlotInMap(TokenContract.storage.public_balances.slot, fromAddress.toBigInt());
+        fromBalance = (await pxe.getPublicStorageAt(tokenContract.address, ownerPublicBalanceSlot)).toBigInt();
+
+        ownerPublicBalanceSlot = cc.aztec.computeSlotInMap(TokenContract.storage.public_balances.slot, toAddress.toBigInt());
+        toBalance = (await pxe.getPublicStorageAt(tokenContract.address, ownerPublicBalanceSlot)).toBigInt();
       }
 
-      try {
-        const simulationResult = await call.simulate();
-        gasEstimate = simulationResult.gasUsed;
-      } catch (simulationError) {
-        console.error('Simulation error:', simulationError);
-        error = simulationError instanceof Error ? simulationError.message : 'Unknown simulation error';
+      const keystore = KeystoreFactory.getKeystore();
+
+      const is2FAEnabled = await keystore.isAccount2FA(fromAddress);
+
+      if(!is2FAEnabled){
+        try {
+          const simulationResult = await call.simulate();
+          gasEstimate = simulationResult.gasUsed;
+        } catch (simulationError) {
+          console.error('Simulation error:', simulationError);
+          error = simulationError instanceof Error ? simulationError.message : 'Unknown simulation error';
+        }
       }
 
       return {
@@ -843,15 +975,21 @@ export class UIManager {
             <input type="number" id="shieldAmount" min="0" step="0.000000001" class="input" required>
           </div>
           <div class="form-actions">
-            <button type="submit" class="button primary-button">Shield</button>
+            <button type="submit" class="button primary-button" id="shieldButton">Shield</button>
             <button type="button" class="button secondary-button" id="cancelShield">Cancel</button>
           </div>
         </form>
+        <div id="shieldProcessing" style="display: none;">
+          <p>Shielding in progress...</p>
+          <div class="loading-spinner"></div>
+        </div>
       </div>
     `;
 
     const shieldForm = shieldModal.querySelector('#shieldForm') as HTMLFormElement;
     const cancelButton = shieldModal.querySelector('#cancelShield') as HTMLButtonElement;
+    const shieldButton = shieldModal.querySelector('#shieldButton') as HTMLButtonElement;
+    const processingDiv = shieldModal.querySelector('#shieldProcessing') as HTMLDivElement;
 
     cancelButton.addEventListener('click', () => {
       document.body.removeChild(shieldModal);
@@ -862,6 +1000,10 @@ export class UIManager {
       const amountInput = shieldForm.querySelector('#shieldAmount') as HTMLInputElement;
       const amount = amountInput.value;
 
+      shieldButton.disabled = true;
+      shieldForm.style.display = 'none';
+      processingDiv.style.display = 'flex';
+
       try {
         await this.tokenService.shieldToken(token, amount);
         document.body.removeChild(shieldModal);
@@ -869,6 +1011,10 @@ export class UIManager {
       } catch (error) {
         console.error('Error shielding token:', error);
         this.showErrorMessage(`Failed to shield ${token.symbol}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      } finally {
+        shieldButton.disabled = false;
+        shieldForm.style.display = 'flex';
+        processingDiv.style.display = 'none';
       }
     });
 
@@ -893,15 +1039,21 @@ export class UIManager {
             <input type="number" id="unshieldAmount" min="0" step="0.000000001" class="input" required>
           </div>
           <div class="form-actions">
-            <button type="submit" class="button primary-button">Unshield</button>
+            <button type="submit" class="button primary-button" id="unshieldButton">Unshield</button>
             <button type="button" class="button secondary-button" id="cancelUnshield">Cancel</button>
           </div>
         </form>
+        <div id="unshieldProcessing" style="display: none;">
+          <p>Unshielding in progress...</p>
+          <div class="loading-spinner"></div>
+        </div>
       </div>
     `;
 
     const unshieldForm = unshieldModal.querySelector('#unshieldForm') as HTMLFormElement;
     const cancelButton = unshieldModal.querySelector('#cancelUnshield') as HTMLButtonElement;
+    const unshieldButton = unshieldModal.querySelector('#unshieldButton') as HTMLButtonElement;
+    const processingDiv = unshieldModal.querySelector('#unshieldProcessing') as HTMLDivElement;
 
     cancelButton.addEventListener('click', () => {
       document.body.removeChild(unshieldModal);
@@ -912,6 +1064,10 @@ export class UIManager {
       const amountInput = unshieldForm.querySelector('#unshieldAmount') as HTMLInputElement;
       const amount = amountInput.value;
 
+      unshieldButton.disabled = true;
+      unshieldForm.style.display = 'none';
+      processingDiv.style.display = 'flex';
+
       try {
         await this.tokenService.unshieldToken(token, amount);
         document.body.removeChild(unshieldModal);
@@ -919,6 +1075,10 @@ export class UIManager {
       } catch (error) {
         console.error('Error unshielding token:', error);
         this.showErrorMessage(`Failed to unshield ${token.symbol}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      } finally {
+        unshieldButton.disabled = false;
+        unshieldForm.style.display = 'flex';
+        processingDiv.style.display = 'none';
       }
     });
 
@@ -1127,6 +1287,7 @@ export class UIManager {
     this.setupHashChangeListener();
     this.loadAccountState();
     this.setupDropdownMenu();
+
     console.log('UI setup complete.');
   }
 
@@ -1457,7 +1618,6 @@ export class UIManager {
       console.log('User confirmed, clearing localStorage...');
       localStorage.clear();
       console.log('localStorage cleared, showing alert...');
-      alert('All data has been erased. The page will now reload.');
       console.log('Reloading page...');
       window.location.reload();
     } else {

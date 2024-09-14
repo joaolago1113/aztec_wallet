@@ -12,6 +12,7 @@ import { EngineTypes } from '@walletconnect/types';
 import { SessionTypes } from '@walletconnect/types';
 import { TxExecutionRequest, type TxReceipt } from '@aztec/circuit-types';
 import { TokenContract } from '@aztec/noir-contracts.js';
+import { KeystoreFactory } from '../factories/KeystoreFactory.js';
 
 
 interface CallData {
@@ -252,15 +253,23 @@ export class WalletConnectService {
 
           const txRequest = await wallet.createTxExecutionRequest({ calls: functionCalls });
 
-          console.log('Simulating transaction');
-          let simulatedTx;
-          try {
-            wallet.simulateTx(txRequest, simulatePublic);
-            console.log('Transaction simulated:', simulatedTx);
-          } catch (error) {
-            console.log('Proving transaction');
-            console.error('Simulation failed:', error);
-            simulatedTx = error;
+          const keystore = KeystoreFactory.getKeystore();
+
+          const is2FAEnabled = await keystore.isAccount2FA(wallet.getAddress());
+
+          let simulatedTx: any;
+
+          if(!is2FAEnabled){
+
+            console.log('Simulating transaction');
+            try {
+              simulatedTx = await wallet.simulateTx(txRequest, simulatePublic);
+              console.log('Transaction simulated:', simulatedTx);
+            } catch (error) {
+              console.log('Proving transaction');
+              console.error('Simulation failed:', error);
+              simulatedTx = error;
+            }
           }
 
           const userConfirmed = await this.showConfirmationModal(simulatedTx);

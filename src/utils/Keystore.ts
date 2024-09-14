@@ -47,7 +47,7 @@ export class KeyStore {
    * @param partialAddress - The partial address of the account.
    * @returns The account's complete address.
    */
-  public async addAccount(sk: Fr, partialAddress: PartialAddress): Promise<CompleteAddress> {
+  public async addAccount(sk: Fr, partialAddress: PartialAddress, use2FA: boolean, hotpSecret: string): Promise<CompleteAddress> {
     const {
       masterNullifierSecretKey,
       masterIncomingViewingSecretKey,
@@ -87,9 +87,61 @@ export class KeyStore {
 
     await this.#keys.set(`${account.toString()}-ecdsa_sk`, privateKey.toBuffer());
 
+    await this.#keys.set(`${account.toString()}-use2FA`, Buffer.from(use2FA ? [1] : [0]));
+
+    if (use2FA) {
+      await this.#keys.set(`${account.toString()}-hotp_secret`, Buffer.from(hotpSecret));
+    }
+    
     this.saveToLocalStorage();
     return Promise.resolve(new CompleteAddress(account, publicKeys, partialAddress));
   }
+
+  /**
+   * Checks if an account has 2FA enabled.
+   * @param account - The AztecAddress of the account.
+   * @returns A Promise that resolves to a boolean indicating whether the account has 2FA enabled.
+   * @throws Error if the account is not found.
+   */
+  public async isAccount2FA(account: AztecAddress): Promise<boolean> {
+    const use2FAKey = `${account.toString()}-use2FA`;
+    const use2FABuffer = await this.#keys.get(use2FAKey);
+
+    if (!use2FABuffer) {
+      throw new Error(`Account ${account.toString()} not found`);
+    }
+
+    return use2FABuffer[0] === 1;
+  }
+
+  /**
+   * Retrieves the 2FA secret for a given account.
+   * @param account - The AztecAddress of the account.
+   * @returns A Promise that resolves to the 2FA secret as a Buffer.
+   * @throws Error if the account is not found or if 2FA is not enabled for the account.
+   */
+  public async get2FASecret(account: AztecAddress): Promise<Buffer> {
+    const use2FAKey = `${account.toString()}-use2FA`;
+    const use2FABuffer = await this.#keys.get(use2FAKey);
+
+    if (!use2FABuffer) {
+      throw new Error(`Account ${account.toString()} not found`);
+    }
+
+    if (use2FABuffer[0] === 0) {
+      throw new Error(`2FA is not enabled for account ${account.toString()}`);
+    }
+
+    const hotpSecretKey = `${account.toString()}-hotp_secret`;
+    const hotpSecretBuffer = await this.#keys.get(hotpSecretKey);
+
+    if (!hotpSecretBuffer) {
+      throw new Error(`2FA secret not found for account ${account.toString()}`);
+    }
+
+    return hotpSecretBuffer;
+  }
+
 
   /**
    * Retrieves the ECDSA secret key for a given account.

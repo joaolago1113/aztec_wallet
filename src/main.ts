@@ -13,7 +13,6 @@ import { renderFooter } from './components/Footer.js';
 import { TransactionService } from './services/TransactionService.js';
 import { CONFIG } from './config.js';
 
-
 let uiManager: UIManager;
 
 async function main() {

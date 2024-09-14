@@ -1,4 +1,4 @@
-import { AuthWitnessProvider, AuthWitness, Fr, AccountManager, AccountWallet, NodeInfo, Schnorr } from "@aztec/aztec.js";
+import { AuthWitnessProvider, AccountContract, Fr, AccountManager, AccountWallet, NodeInfo, Contract } from "@aztec/aztec.js";
 import { EcdsaKAccountContract } from '@aztec/accounts/ecdsa';
 import { computePartialAddress, deriveSigningKey, deriveKeys, CompleteAddress, AztecAddress } from '@aztec/circuits.js';
 import { PXE } from '@aztec/circuit-types';
@@ -11,7 +11,8 @@ import { getCanonicalKeyRegistryAddress } from '@aztec/protocol-contracts/key-re
 import { DefaultAccountInterface } from '@aztec/accounts/defaults';
 import { derivePublicKeyFromSecretKey } from '@aztec/circuits.js';
 import { getEcdsaKWallet } from '@aztec/accounts/ecdsa';
-import { EcdsaKCustomAccountContract } from '../contracts/EcdsaKCustomAccountContract.js';
+import { EcdsaKAccountContractArtifact } from '@aztec/accounts/ecdsa';
+import { EcdsaKHOTPAccountContract, EcdsaKCustomAccountContractArtifact } from '../contracts/EcdsaKHOTPAccountContract.js';
 import { getCustomEcdsaKWallet } from '../utils/CustomWalletUtils.js';
 
 
@@ -39,28 +40,65 @@ export class AccountService {
       localStorage.removeItem('currentAccountIndex');
     }
   }
-  async createAccount(seed?: string) {
+
+  async importAccount(secretKey: string, use2FA: boolean = false, hotpsecret: string = ''): Promise<void> {
+    const secretKeyFr = Fr.fromString(secretKey);
+
+    const privateKey = deriveSigningKey(secretKeyFr);
+
+    let accountContract: AccountContract;
+
+    if(!use2FA){
+      accountContract = new EcdsaKAccountContract(privateKey.toBuffer());
+    }else{
+      accountContract = new EcdsaKHOTPAccountContract(privateKey.toBuffer(), Buffer.from(hotpsecret));
+    }
+
+    const account = new AccountManager(this.pxe, secretKeyFr, accountContract, Fr.ONE);
+
+    const wallet = await this.getWallet(account);
+
+    const partialAddress = computePartialAddress(account.getInstance());
+
+    const accountInKeystore = await this.isAccountInKeystore(wallet);
+
+    if (!accountInKeystore) {
+      await this.keystore.addAccount(secretKeyFr, partialAddress, use2FA, hotpsecret);
+      const accounts = await this.keystore.getAccounts();
+      this.currentAccountIndex = accounts.length - 1;
+      this.saveCurrentAccountIndex();
+    } else {
+      throw new Error('Account already exists in keystore');
+    }
+  }
+
+  async createAccount(seed: string | undefined, use2FA: boolean = false) {
     let nonce = 0;
     let secretKey: Fr;
     let account: AccountManager;
     let wallet: AccountWallet;
+    let hotpSecret: string | undefined;
 
     while (true) {
       try {
         secretKey = CryptoUtils.generateSecretKey(seed, nonce);
-        const totpSecret = CryptoUtils.generateHOTPSecret(seed);
-        account = await this.setupAccount(secretKey, Buffer.from(totpSecret));
+        if (use2FA) {
+          hotpSecret = CryptoUtils.generateHOTPSecret(seed, nonce);
+        }else{
+          hotpSecret = '';
+        }
+        account = await this.setupAccount(secretKey, use2FA ? Buffer.from(hotpSecret) : Buffer.from([]));
         wallet = await this.getWallet(account);
         const partialAddress = computePartialAddress(account.getInstance());
 
         const accountInKeystore = await this.isAccountInKeystore(wallet);
 
         if (!accountInKeystore) {
-          await this.keystore.addAccount(secretKey, partialAddress);
+          await this.keystore.addAccount(secretKey, partialAddress, use2FA, hotpSecret);
           const accounts = await this.keystore.getAccounts();
           this.currentAccountIndex = accounts.length - 1;
           this.saveCurrentAccountIndex();
-          return;
+          return { secretKey, hotpSecret };
         }
 
         nonce++;
@@ -73,7 +111,15 @@ export class AccountService {
 
   private async setupAccount(secretKey: Fr, totpSecretHash: Buffer): Promise<AccountManager> {
     const privateKey = deriveSigningKey(secretKey);
-    const accountContract = new EcdsaKCustomAccountContract(privateKey.toBuffer(), totpSecretHash);
+
+    let accountContract: AccountContract;
+
+    if(!totpSecretHash.byteLength){
+      accountContract = new EcdsaKAccountContract(privateKey.toBuffer());
+    }else{
+      accountContract = new EcdsaKHOTPAccountContract(privateKey.toBuffer(), totpSecretHash);
+    }
+
     const account = new AccountManager(this.pxe, secretKey, accountContract, Fr.ONE);
     return account;
   }
@@ -115,6 +161,7 @@ export class AccountService {
 
     const ecdsaSkBuffer = await this.keystore.getEcdsaSecretKey(accountAddress);
     const ecdsaSk = Fr.fromBuffer(ecdsaSkBuffer);
+
     const ecdsaKWallet = await getCustomEcdsaKWallet(this.pxe, accountAddress, ecdsaSk.toBuffer());
 
     return ecdsaKWallet;

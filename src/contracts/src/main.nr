@@ -178,4 +178,12 @@ contract EcdsaKCustomAccount {
 
         field_value
     }
+
+    unconstrained fn get_counter() -> pub Field {
+        let storage = Storage::init(context);
+        let hotp_secret_note = storage.hotp_secret.view_note();
+        hotp_secret_note.counter
+}
+
+
 }
