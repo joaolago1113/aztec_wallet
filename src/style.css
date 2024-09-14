@@ -797,6 +797,14 @@ footer nav a:hover {
   margin-bottom: 1rem;
 }
 
+.filter-container {
+  margin-top: 1rem;
+}
+
+.filter-container label {
+  margin-right: 0.5rem;
+}
+
 .modal-content .form-actions {
   display: flex;
   justify-content: flex-end;
@@ -1281,4 +1289,13 @@ footer nav a:hover {
 
 .hotp-modal .form-actions .button {
   margin: 0 0.5rem;
+}
+
+.transaction-hash {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.transaction-hash:hover {
+  text-decoration: underline;
 }

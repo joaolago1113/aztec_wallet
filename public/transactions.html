@@ -9,6 +9,86 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="icon" href="/aztec.png" type="image/png">
+  <style>
+    .transaction-row {
+      background-color: var(--card);
+      border-radius: var(--radius);
+      margin-bottom: 1rem;
+      padding: 1rem;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .transaction-icon {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      margin-right: 0.5rem;
+      vertical-align: middle;
+    }
+
+    .transaction-icon.mint {
+      background-color: #4caf50;
+    }
+
+    .transaction-icon.shield {
+      background-color: #2196f3;
+    }
+
+    .transaction-icon.unshield {
+      background-color: #ff9800;
+    }
+
+    .transaction-icon.transfer {
+      background-color: #9c27b0;
+    }
+
+    .transaction-icon.redeem {
+      background-color: #f44336;
+    }
+
+    .transaction-action {
+      font-weight: bold;
+      text-transform: capitalize;
+    }
+
+    .transaction-amount {
+      font-weight: bold;
+      margin-right: 0.25rem;
+    }
+
+    .transaction-status {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      border-radius: var(--radius);
+      font-weight: bold;
+      text-transform: capitalize;
+    }
+
+    .transaction-status.pending {
+      background-color: #ffeb3b;
+      color: #000;
+    }
+
+    .transaction-status.success {
+      background-color: #4caf50;
+      color: #fff;
+    }
+
+    .transaction-status.failed {
+      background-color: #f44336;
+      color: #fff;
+    }
+
+    .transaction-addresses {
+      display: flex;
+      align-items: center;
+    }
+
+    .transaction-arrow {
+      margin: 0 0.5rem;
+    }
+  </style>
 </head>
 <body>
   <main>
@@ -16,7 +96,19 @@
       <div class="card full-width-card">
         <div class="card-header">
           <h3 class="card-title">Transactions</h3>
-          <p class="card-description">View your transaction history.</p>
+          <p class="card-description">View your locally stored transaction history.</p>
+          <div class="filter-container">
+            <label for="transactionFilter">Filter by action:</label>
+            <select id="transactionFilter" class="select">
+              <option value="all">All</option>
+              <option value="mint">Mint</option>
+              <option value="shield">Shield</option>
+              <option value="unshield">Unshield</option>
+              <option value="transfer">Transfer</option>
+              <option value="redeem">Redeem</option>
+            </select>
+            <!--<button id="refreshTransactions" class="button secondary-button">Refresh</button> -->
+          </div>
         </div>
         <div class="card-content">
           <table class="table">
@@ -27,6 +119,7 @@
                 <th>Status</th>
                 <th>Timestamp</th>
                 <th>From → To</th>
+                <th>Tx Hash</th>
               </tr>
             </thead>
             <tbody id="transactionsTableBody">

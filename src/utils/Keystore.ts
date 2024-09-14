@@ -20,9 +20,11 @@ import { poseidon2HashWithSeparator } from '@aztec/foundation/crypto';
 import { type Bufferable, serializeToBuffer } from '@aztec/foundation/serialize';
 import { CryptoUtils } from './CryptoUtils.js';
 import { deriveSigningKey } from '@aztec/circuits.js';
+import { Transaction } from '../services/TransactionService.js';
 
 export class KeyStore {
   #keys = new Map<string, Buffer>();
+  #transactions = new Map<string, Transaction[]>();
 
   constructor() {
     this.loadFromLocalStorage();
@@ -34,11 +36,20 @@ export class KeyStore {
       const parsedKeys = JSON.parse(storedKeys);
       this.#keys = new Map(Object.entries(parsedKeys).map(([key, value]) => [key, Buffer.from(value as string, 'base64')]));
     }
+
+    const storedTransactions = localStorage.getItem('transactions');
+    if (storedTransactions) {
+      const parsedTransactions = JSON.parse(storedTransactions);
+      this.#transactions = new Map(Object.entries(parsedTransactions).map(([key, value]) => [key, value as Transaction[]]));
+    }
   }
 
   private saveToLocalStorage() {
     const keysObject = Object.fromEntries(Array.from(this.#keys.entries()).map(([key, value]) => [key, value.toString('base64')]));
     localStorage.setItem('keystoreData', JSON.stringify(keysObject));
+
+    const transactionsObject = Object.fromEntries(Array.from(this.#transactions.entries()));
+    localStorage.setItem('transactions', JSON.stringify(transactionsObject));
   }
 
   /**
@@ -460,5 +471,16 @@ export class KeyStore {
       await this.#keys.delete(key);
     }
     this.saveToLocalStorage();
+  }
+
+  public async saveTransaction(account: AztecAddress, transaction: Transaction) {
+    const accountTransactions = this.#transactions.get(account.toString()) || [];
+    accountTransactions.push(transaction);
+    this.#transactions.set(account.toString(), accountTransactions);
+    this.saveToLocalStorage();
+  }
+
+  public async getTransactions(account: AztecAddress): Promise<Transaction[]> {
+    return this.#transactions.get(account.toString()) || [];
   }
 }

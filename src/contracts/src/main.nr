@@ -1,6 +1,6 @@
 mod hotp_note;
 
-contract EcdsaKCustomAccount {
+contract EcdsaKHOTPAccount {
 
     use crate::hotp_note::HotpSecretNote;
 
@@ -60,45 +60,99 @@ contract EcdsaKCustomAccount {
     #[aztec(noinitcheck)]
     #[contract_library_method]
     fn is_valid_impl(context: &mut PrivateContext, outer_hash: Field) -> bool {
-        // Load public key from storage
+        // Load storage
         let storage = Storage::init(context);
+
+        // Load public key from storage
         let public_key = storage.public_key.get_note();
+
+        // Load hotp_secret note
         let mut hotp_secret = storage.hotp_secret.get_note().note;
 
         // Load auth witness
-        let witness: [Field; 68] = unsafe {
-            get_auth_witness(outer_hash)
-        };
+        let witness: [Field; 68] = unsafe { get_auth_witness(outer_hash) };
         let mut signature: [u8; 64] = [0; 64];
         for i in 0..64 {
             signature[i] = witness[i] as u8;
         }
 
         // Verify payload signature using Ethereum's signing scheme
-        // Note that noir expects the hash of the message/challenge as input to the ECDSA verification.
         let outer_hash_bytes: [u8; 32] = outer_hash.to_be_bytes();
         let hashed_message: [u8; 32] = std::hash::sha256(outer_hash_bytes);
-        let verification = std::ecdsa_secp256k1::verify_signature(public_key.x, public_key.y, signature, hashed_message);
+        let verification = std::ecdsa_secp256k1::verify_signature(
+            public_key.x,
+            public_key.y,
+            signature,
+            hashed_message,
+        );
 
         assert(verification == true, "Invalid ECDSA signature");
 
         // Extract HOTP code from the witness
-        let hotp_code = (witness[67] as u32) | ((witness[66] as u32) << 8) | ((witness[65] as u32) << 16) | ((witness[64] as u32) << 24);
+        let hotp_code = (witness[67] as u32)
+            | ((witness[66] as u32) << 8)
+            | ((witness[65] as u32) << 16)
+            | ((witness[64] as u32) << 24);
 
         let hotp_secret_bytes: [u8; 20] = hotp_secret.value.to_be_bytes();
 
-        let valid_code = generate_hotp_code(hotp_secret_bytes, hotp_secret.counter as u64);
+        // Generate valid HOTP codes for counter -1, counter, counter +1
+        let mut code_valid = false;
 
-        assert(hotp_code == valid_code, "Invalid HOTP code");
+        // Handle potential underflow when subtracting 1 from the counter
+        let mut counters_to_try: [Field; 3] = [0; 3];
+        
+        if ((hotp_secret.counter as u8) > 0) {
 
+            counters_to_try =
+            [
+                hotp_secret.counter,
+                hotp_secret.counter - 1,
+                hotp_secret.counter + 1,
+            ];
+        } else {
+            counters_to_try = [hotp_secret.counter, hotp_secret.counter + 1, hotp_secret.counter + 2];
+        };
+
+        let mut valid_code = generate_hotp_code(hotp_secret_bytes, counters_to_try[0] as u64);
+
+        if hotp_code == valid_code {
+            code_valid = true;
+        }else{
+            valid_code = generate_hotp_code(hotp_secret_bytes, counters_to_try[1] as u64);
+
+            if hotp_code == valid_code {
+                code_valid = true;
+            }else{
+                valid_code = generate_hotp_code(hotp_secret_bytes, counters_to_try[2] as u64);
+
+                if hotp_code == valid_code {
+                    code_valid = true;
+                }
+            }
+        }
+
+        assert(code_valid == true, "Invalid HOTP code");
+
+        // Update the counter to the accepted counter + 1
+        hotp_secret.counter += 1;
+
+        // Replace the hotp_secret note with the updated counter
         let this = context.this_address();
         let this_keys = get_current_public_keys(context, this);
 
-        hotp_secret.counter += 1;
-        storage.hotp_secret.replace(&mut hotp_secret).emit(encode_and_encrypt_note_with_keys( context, this_keys.ovpk_m, this_keys.ivpk_m, this));
+        storage.hotp_secret
+            .replace(&mut hotp_secret)
+            .emit(encode_and_encrypt_note_with_keys(
+                context,
+                this_keys.ovpk_m,
+                this_keys.ivpk_m,
+                this,
+            ));
 
         true
     }
+
 
     #[contract_library_method]
     fn generate_hotp_code(key: [u8; 20], counter: u64) -> u32 {

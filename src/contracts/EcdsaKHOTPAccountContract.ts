@@ -9,7 +9,7 @@ import { DefaultAccountContract } from '@aztec/accounts/defaults';
 
 import { type NoirCompiledContract, loadContractArtifact, Contract, type AztecAddress } from '@aztec/aztec.js';
 
-import EcdsaKCustomAccountContractJson from './target/ecdsa_k_custom_account_contract-EcdsaKCustomAccount.json';
+import EcdsaKCustomAccountContractJson from './target/ecdsa_k_hotp_account_contract-EcdsaKHOTPAccount.json';
 
 export const EcdsaKCustomAccountContractArtifact = loadContractArtifact(EcdsaKCustomAccountContractJson as NoirCompiledContract);
 
@@ -100,7 +100,7 @@ class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
       modal.className = 'modal';
       modal.innerHTML = `
         <div class="modal-content hotp-modal">
-          <h2>Enter HOTP Code</h2>
+          <h2>Enter 2FA Code</h2>
           <p class="hotp-counter">Counter: <span>${counter}</span></p>
           <form id="hotpForm">
             <div class="form-group">
@@ -114,6 +114,7 @@ class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
           </form>
         </div>
       `;
+      modal.style.zIndex = '999999999999';
 
       const hotpForm = modal.querySelector('#hotpForm') as HTMLFormElement;
       const cancelButton = modal.querySelector('#cancelHOTP') as HTMLButtonElement;

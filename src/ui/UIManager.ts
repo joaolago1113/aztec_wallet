@@ -129,6 +129,7 @@ export class UIManager {
   private async updateTransactionsPage() {
     console.log('Updating Transactions page');
     await this.displayTransactions();
+    this.setupTransactionFilters();
   }
 
   private async updateBridgePage() {
@@ -199,7 +200,7 @@ export class UIManager {
     // TODO: Implement the withdraw functionality
   }
 
-  private async displayTransactions() {
+  private async displayTransactions(filter: string = 'all') {
     const transactionsTableBody = document.getElementById('transactionsTableBody');
     if (!transactionsTableBody) {
       console.debug('Transactions table body not found. This is expected if not on the Transactions page.');
@@ -207,7 +208,16 @@ export class UIManager {
     }
 
     try {
-      const transactions = await this.transactionService.fetchTransactions();
+      let transactions = await this.transactionService.fetchTransactions();
+      
+      // Filter transactions based on the selected action
+      if (filter !== 'all') {
+        transactions = transactions.filter(transaction => transaction.action === filter);
+      }
+
+      // Sort transactions from most recent to least recent
+      transactions.sort((a, b) => b.timestamp - a.timestamp);
+
       console.log('Displaying transactions:', transactions);
       transactionsTableBody.innerHTML = '';
 
@@ -218,12 +228,32 @@ export class UIManager {
       } else {
         for (const transaction of transactions) {
           const row = document.createElement('tr');
+          row.classList.add('transaction-row');
           row.innerHTML = `
-            <td>${await this.getActionDescription(transaction)}</td>
-            <td>${await this.formatAmount(transaction)}</td>
-            <td>${transaction.status}</td>
-            <td>${new Date(transaction.timestamp).toLocaleString()}</td>
-            <td>${await this.formatAddresses(transaction)}</td>
+            <td>
+              <div class="transaction-icon ${transaction.action}"></div>
+              <span class="transaction-action">${transaction.action}</span>
+            </td>
+            <td>
+              <span class="transaction-amount">${transaction.amount}</span>
+              <span class="transaction-token">${transaction.token}</span>
+            </td>
+            <td>
+              <span class="transaction-status ${transaction.status}">${transaction.status}</span>
+            </td>
+            <td>
+              <span class="transaction-timestamp">${new Date(transaction.timestamp).toLocaleString()}</span>
+            </td>
+            <td>
+              <div class="transaction-addresses">
+                ${transaction.from ? `<span class="transaction-from">${this.formatAddress(transaction.from)}</span>` : ''}
+                ${transaction.from && transaction.to ? '<span class="transaction-arrow">→</span>' : ''}
+                ${transaction.to ? `<span class="transaction-to">${this.formatAddress(transaction.to)}</span>` : ''}
+              </div>
+            </td>
+            <td>
+              ${transaction.txHash ? `<a href="https://aztecscan.xyz/tx/${transaction.txHash}" target="_blank" class="transaction-hash">${transaction.txHash.slice(0, 6)}...${transaction.txHash.slice(-4)}</a>` : ''}
+            </td>
           `;
           transactionsTableBody.appendChild(row);
         }
@@ -236,44 +266,8 @@ export class UIManager {
     }
   }
 
-  private async getActionDescription(transaction: Transaction): Promise<string> {
-    const currentWallet = await this.accountService.getCurrentWallet();
-    switch (transaction.action) {
-      case 'mint':
-        return 'Minted';
-      case 'shield':
-        return 'Shielded';
-      case 'unshield':
-        return 'Unshielded';
-      case 'transfer':
-        return transaction.from === currentWallet?.getAddress().toString() ? 'Sent' : 'Received';
-      case 'redeem':
-        return 'Redeemed';
-      default:
-        return 'Unknown';
-    }
-  }
-
-  private async formatAmount(transaction: Transaction): Promise<string> {
-    const currentWallet = await this.accountService.getCurrentWallet();
-    const sign = transaction.action === 'unshield' || 
-                 (transaction.action === 'transfer' && transaction.from === currentWallet?.getAddress().toString())
-                 ? '-' : '+';
-    return `${sign}${transaction.amount} ${transaction.token}`;
-  }
-
-  private async formatAddresses(transaction: Transaction): Promise<string> {
-    const currentWallet = await this.accountService.getCurrentWallet();
-    const currentAddress = currentWallet?.getAddress().toString();
-    if (transaction.action === 'mint' || transaction.action === 'shield' || transaction.action === 'unshield') {
-      return this.formatAddress(currentAddress);
-    } else {
-      return `${this.formatAddress(transaction.from)} → ${this.formatAddress(transaction.to)}`;
-    }
-  }
-
-  private formatAddress(address: string | undefined): string {
-    return address ? `${address.slice(0, 6)}...${address.slice(-4)}` : 'Unknown';
+  private formatAddress(address: string): string {
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
   }
 
   private setupDynamicEventListeners() {
@@ -1622,6 +1616,25 @@ export class UIManager {
       window.location.reload();
     } else {
       console.log('User cancelled the operation');
+    }
+  }
+
+  private setupTransactionFilters() {
+    const filterSelect = document.getElementById('transactionFilter') as HTMLSelectElement;
+    const refreshButton = document.getElementById('refreshTransactions') as HTMLButtonElement;
+
+    if (filterSelect) {
+      filterSelect.addEventListener('change', async () => {
+        const selectedFilter = filterSelect.value;
+        await this.displayTransactions(selectedFilter);
+      });
+    }
+
+    if (refreshButton) {
+      refreshButton.addEventListener('click', async () => {
+        const selectedFilter = filterSelect ? filterSelect.value : 'all';
+        await this.displayTransactions(selectedFilter);
+      });
     }
   }
 }

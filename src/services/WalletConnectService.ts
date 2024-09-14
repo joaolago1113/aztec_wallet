@@ -14,16 +14,6 @@ import { TxExecutionRequest, type TxReceipt } from '@aztec/circuit-types';
 import { TokenContract } from '@aztec/noir-contracts.js';
 import { KeystoreFactory } from '../factories/KeystoreFactory.js';
 
-
-interface CallData {
-  name: string;
-  to: string;
-  selector: string;
-  type: 'private' | 'public';
-  isStatic: boolean;
-  args: string[];
-}
-
 export class WalletConnectService {
   private signClient: InstanceType<typeof SignClient>;
   private initializationPromise: Promise<void>;
@@ -260,7 +250,6 @@ export class WalletConnectService {
           let simulatedTx: any;
 
           if(!is2FAEnabled){
-
             console.log('Simulating transaction');
             try {
               simulatedTx = await wallet.simulateTx(txRequest, simulatePublic);

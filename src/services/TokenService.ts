@@ -1,11 +1,14 @@
 import {  AccountWallet, Fr, AztecAddress, ContractFunctionInteraction, computeSecretHash, Note, ExtendedNote, TxHash, SignerlessWallet } from "@aztec/aztec.js";
 import { TokenContract, TokenContractArtifact } from '@aztec/noir-contracts.js';
+import { getSingleKeyAccount } from '@aztec/accounts/single_key';
 import { PXE } from '@aztec/circuit-types';
 import { KeystoreFactory } from '../factories/KeystoreFactory.js';
 import { UIManager } from '../ui/UIManager.js';
 import { AccountService } from '../services/AccountService.js';
 import { CheatCodes } from '@aztec/aztec.js';
 import { CONFIG } from '../config.js';
+import { getInitialTestAccountsWallets} from "@aztec/accounts/testing";
+import { TransactionService } from './TransactionService.js';
 
 
 export class TokenService {
@@ -22,7 +25,8 @@ export class TokenService {
   constructor(
     private pxe: PXE,
     private uiManager: UIManager,
-    private accountService: AccountService
+    private accountService: AccountService,
+    private transactionService: TransactionService
   ) {
     this.loadTokensFromLocalStorage();
     this.ensureUniqueTokens();
@@ -230,25 +234,26 @@ export class TokenService {
 
             const addressWallet = this.currentWallet!.getAddress();
 
-            let callPrivateBalance: ContractFunctionInteraction = await tokenContract.methods.balance_of_private(addressWallet);
+            const randAccount = await getInitialTestAccountsWallets(this.pxe);
 
-            let ownerPublicBalanceSlot: Fr;
+            let callPrivateBalance: ContractFunctionInteraction = await tokenContract.withWallet(randAccount[0]).methods.balance_of_private(addressWallet);
+            let callPublicBalance: ContractFunctionInteraction = await tokenContract.withWallet(randAccount[0]).methods.balance_of_public(addressWallet);
 
-            await this.ensureCheatCodesInitialized();
+            try {
+              console.log("simulating public balance");
+              publicBalance = await callPublicBalance.simulate();
 
-            ownerPublicBalanceSlot = this.cc!.aztec.computeSlotInMap(TokenContract.storage.public_balances.slot,	 addressWallet.toBigInt());
-
-            publicBalance = (await this.pxe.getPublicStorageAt(tokenAddress, ownerPublicBalanceSlot)).toBigInt();
+            } catch (error) {
+              console.error(`Error simulating public balance for ${token.symbol}:`, error);
+            }
 
             try {
               console.log("simulating private balance");
               privateBalance = await callPrivateBalance.simulate();
             } catch (error) {
               console.error(`Error simulating public balance for ${token.symbol}:`, error);
-              // Keep the default value of 0
             }
             
-            // Convert to float and format
             const privateBalanceFloat = Number(privateBalance) / 1e9;
             const publicBalanceFloat = Number(publicBalance) / 1e9;
 
@@ -348,17 +353,15 @@ export class TokenService {
     for (const token of this.tokens) {
       const tokenAddress = await this.getTokenAddress(token);
       const tokenContract = await TokenContract.at(tokenAddress, this.currentWallet);
-      const privateBalance = await tokenContract.methods.balance_of_private(address).simulate();
 
+      const randAccount = await getInitialTestAccountsWallets(this.pxe);
+      const privateBalance = (await tokenContract.withWallet(randAccount[0]).methods.balance_of_private(address).simulate());
+      const publicBalance = (await tokenContract.withWallet(randAccount[0]).methods.balance_of_public(address).simulate());
 
-
-      await this.ensureCheatCodesInitialized();
-
-      const addressWallet = this.currentWallet!.getAddress();
-
-      let ownerPublicBalanceSlot: Fr = this.cc!.aztec.computeSlotInMap(TokenContract.storage.public_balances.slot, addressWallet);
-
-      const publicBalance = (await this.pxe.getPublicStorageAt(tokenAddress, ownerPublicBalanceSlot)).toBigInt();
+      //await this.ensureCheatCodesInitialized();
+      //const addressWallet = this.currentWallet!.getAddress();
+      //let ownerPublicBalanceSlot: Fr = this.cc!.aztec.computeSlotInMap(TokenContract.storage.public_balances.slot, addressWallet);
+      //const publicBalance = (await this.pxe.getPublicStorageAt(tokenAddress, ownerPublicBalanceSlot)).toBigInt();
 
       balances[token.symbol] = { privateBalance, publicBalance };
     }
@@ -379,9 +382,29 @@ export class TokenService {
     try {
       const { contract, address } = await this.setupToken(this.currentWallet, tokenData);
       const mintAmount = new Fr(BigInt(parsedAmount * 1e9));
-      await contract.methods.privately_mint_private_note(mintAmount).send().wait();
+      const tx = await contract.methods.privately_mint_private_note(mintAmount).send();
+
+      await this.transactionService.saveTransaction({
+        action: 'mint',
+        token: `${tokenData.name} (${tokenData.symbol})`,
+        amount: tokenData.amount,
+        timestamp: Date.now(),
+        status: 'pending',
+        txHash: (await tx.getTxHash()).toString(),
+      });
+
+      await tx.wait();
       console.log(`Created and minted ${tokenData.amount} ${tokenData.symbol} tokens`);
       await this.updateTable();
+
+      await this.transactionService.saveTransaction({
+        action: 'mint',
+        token: `${tokenData.name} (${tokenData.symbol})`,
+        amount: tokenData.amount,
+        timestamp: Date.now(),
+        status: 'success',
+        txHash: (await tx.getTxHash()).toString(),
+      });
     } catch (error) {
       console.error('Error creating token:', error);
       throw error;
@@ -402,9 +425,40 @@ export class TokenService {
       const address = AztecAddress.fromString(tokenAddress);
       const contract = await TokenContract.at(address, this.currentWallet);
       const mintAmount = new Fr(BigInt(parsedAmount * 1e9));
-      await contract.methods.privately_mint_private_note(mintAmount).send().wait();
+      const tx = await contract.methods.privately_mint_private_note(mintAmount).send();
+
+
+      const tokenContract = await TokenContract.at(AztecAddress.fromString(tokenAddress), this.currentWallet);
+      const randAccount = await getInitialTestAccountsWallets(this.pxe);
+      const simluatedName = (await tokenContract.withWallet(randAccount[0]).methods.public_get_name().simulate()).value;
+      const simluatedSymbol = (await tokenContract.withWallet(randAccount[0]).methods.public_get_symbol().simulate()).value;
+
+      const name = this.tokenNameSymboltoString(simluatedName);
+      const symbol = this.tokenNameSymboltoString(simluatedSymbol);
+
+      const tokenNameSymbol = `${name} TICKER: (${symbol})`;
+
+      await this.transactionService.saveTransaction({
+        action: 'mint',
+        token: tokenNameSymbol, // You might want to fetch the token name and symbol from the contract
+        amount,
+        timestamp: Date.now(),
+        status: 'pending',
+        txHash: (await tx.getTxHash()).toString(),
+      });
+
+      await tx.wait();
       console.log(`Minted ${amount} tokens for contract at ${tokenAddress}`);
       await this.updateTable();
+
+      await this.transactionService.saveTransaction({
+        action: 'mint',
+        token: tokenNameSymbol,
+        amount,
+        timestamp: Date.now(),
+        status: 'success',
+        txHash: (await tx.getTxHash()).toString(),
+      });
     } catch (error) {
       console.error('Error minting tokens:', error);
       throw error;
@@ -433,15 +487,33 @@ export class TokenService {
 
       const tx = await tokenContract.methods
         .shield(this.currentWallet.getAddress(), shieldAmount, shieldSecretHash, 0)
-        .send({})
-        .wait();
+        .send({});
 
-      console.log(`Shielded ${amount} ${token.symbol} tokens. Transaction hash: ${tx.txHash}`);
+      await this.transactionService.saveTransaction({
+        action: 'shield',
+        token: `${token.name} (${token.symbol})`,
+        amount,
+        timestamp: Date.now(),
+        status: 'pending',
+        txHash: (await tx.getTxHash()).toString(),
+      });
 
-      await this.addPendingShieldNoteToPXE(shieldAmount, shieldSecretHash, tx.txHash, tokenAddress, index);
+      const shieldedTx =await tx.wait();
+      console.log(`Shielded ${amount} ${token.symbol} tokens. Transaction hash: ${shieldedTx.txHash}`);
+
+      await this.addPendingShieldNoteToPXE(shieldAmount, shieldSecretHash, shieldedTx.txHash, tokenAddress, index);
 
       await this.updatePendingShieldsList();
       await this.updateTable();
+
+      await this.transactionService.saveTransaction({
+        action: 'shield',
+        token: `${token.name} (${token.symbol})`,
+        amount,
+        timestamp: Date.now(),
+        status: 'success',
+        txHash: (await tx.getTxHash()).toString(),
+      });
     } catch (error) {
       console.error('Error shielding tokens:', error);
       throw error;
@@ -528,14 +600,32 @@ export class TokenService {
 
       const redeemTx = await tokenContract.methods
         .redeem_shield(this.currentWallet.getAddress(), shieldAmount, derivedSecret)
-        .send()
-        .wait();
+        .send();
 
-      console.log(`Redeemed ${shieldAmount.toBigInt()} ${token.name} (${token.symbol}) tokens. Transaction hash: ${redeemTx.txHash}`);
+      await this.transactionService.saveTransaction({
+        action: 'redeem',
+        token: `${token.name} (${token.symbol})`,
+        amount: this.formatAmount(shieldAmount.toBigInt()),
+        timestamp: Date.now(),
+        status: 'pending',
+        txHash: (await redeemTx.getTxHash()).toString(),
+      });
+
+      const redeemedTx =await redeemTx.wait();
+      console.log(`Redeemed ${shieldAmount.toBigInt()} ${token.name} (${token.symbol}) tokens. Transaction hash: ${redeemedTx.txHash}`);
 
       await this.updatePendingShieldsList();
 
       await this.updateTable();
+
+      await this.transactionService.saveTransaction({
+        action: 'redeem',
+        token: `${token.name} (${token.symbol})`,
+        amount: this.formatAmount(shieldAmount.toBigInt()),
+        timestamp: Date.now(),
+        status: 'success',
+        txHash: (await redeemTx.getTxHash()).toString(),
+      });
     } catch (error) {
       console.error('Error redeeming shield:', error);
       throw error;
@@ -572,11 +662,19 @@ export class TokenService {
     const unshieldAmount = new Fr(BigInt(amount) * BigInt(1e9));
 
     try {
-
       // Perform the unshield transaction
       const tx = await tokenContract.methods
         .unshield(this.currentWallet.getAddress(), this.currentWallet.getAddress(), unshieldAmount, 0)
         .send({});
+
+      await this.transactionService.saveTransaction({
+        action: 'unshield',
+        token: `${token.name} (${token.symbol})`,
+        amount,
+        timestamp: Date.now(),
+        status: 'pending',
+        txHash: (await tx.getTxHash()).toString(),
+      });
 
       console.log(`Unshielding ${amount} ${token.symbol} tokens. Transaction hash: ${await tx.getTxHash()}`);
       const receipt = await tx.wait();
@@ -584,6 +682,15 @@ export class TokenService {
 
       // Update the tokens table after unshielding
       await this.updateTable();
+
+      await this.transactionService.saveTransaction({
+        action: 'unshield',
+        token: `${token.name} (${token.symbol})`,
+        amount,
+        timestamp: Date.now(),
+        status: 'success',
+        txHash: (await tx.getTxHash()).toString(),
+      });
     } catch (error) {
       console.error('Error unshielding tokens:', error);
       throw error;
@@ -607,9 +714,33 @@ export class TokenService {
       tx = await tokenContract.methods.transfer_public(this.currentWallet.getAddress(), AztecAddress.fromString(recipient), scaledAmount, 0).send();
     }
 
+    const txHash = await tx.getTxHash();
+
+    await this.transactionService.saveTransaction({
+      action: 'transfer',
+      token: `${token.name} (${token.symbol})`,
+      amount,
+      from: this.currentWallet!.getAddress().toString(),
+      to: recipient,
+      timestamp: Date.now(),
+      status: 'pending',
+      txHash: txHash.toString(),
+    });
+
     await tx.wait();
     console.log(`Successfully sent ${amount} ${token.symbol} to ${recipient}`);
     await this.updateTable();
+
+    await this.transactionService.saveTransaction({
+      action: 'transfer',
+      token: `${token.name} (${token.symbol})`,
+      amount,
+      from: this.currentWallet!.getAddress().toString(),
+      to: recipient,
+      timestamp: Date.now(),
+      status: 'success',
+      txHash: txHash.toString(),
+    });
   }
 
   async getReceiveAddress(): Promise<string> {
@@ -696,14 +827,18 @@ export class TokenService {
       const is2FAEnabled = await keystore.isAccount2FA(addressWallet);
 
 
-      let simluatedName: Fr;
-      let simluatedSymbol: Fr;
+      let simluatedName: bigint;
+      let simluatedSymbol: bigint;
 
       if (is2FAEnabled) {
-        const nameSlot = this.cc!.aztec.computeSlotInMap(TokenContract.storage.name.slot, addressWallet);
-        simluatedName = (await this.cc!.aztec.loadPublic(tokenAddress, nameSlot));
-        const symbolSlot = this.cc!.aztec.computeSlotInMap(TokenContract.storage.symbol.slot, addressWallet);
-        simluatedSymbol = (await this.cc!.aztec.loadPublic(tokenAddress, symbolSlot));
+        //const nameSlot = this.cc!.aztec.computeSlotInMap(TokenContract.storage.name.slot, addressWallet);
+        //simluatedName = (await this.cc!.aztec.loadPublic(tokenAddress, nameSlot));
+        //const symbolSlot = this.cc!.aztec.computeSlotInMap(TokenContract.storage.symbol.slot, addressWallet);
+        //simluatedSymbol = (await this.cc!.aztec.loadPublic(tokenAddress, symbolSlot));
+
+        const randAccount = await getInitialTestAccountsWallets(this.pxe);
+        simluatedName = (await tokenContract.withWallet(randAccount[0]).methods.public_get_name().simulate()).value;
+        simluatedSymbol = (await tokenContract.withWallet(randAccount[0]).methods.public_get_symbol().simulate()).value;
 
       }else{
 
@@ -711,11 +846,8 @@ export class TokenService {
         simluatedSymbol = (await tokenContract.methods.public_get_symbol().simulate()).value;
       }
 
-
-      //let name = this.tokenNameSymboltoString(simluatedName.toBigInt());
-      //let symbol = this.tokenNameSymboltoString(simluatedSymbol.toBigInt());
-      let name = 'NA';
-      let symbol = 'NA';
+      let name = this.tokenNameSymboltoString(simluatedName);
+      let symbol = this.tokenNameSymboltoString(simluatedSymbol);
 
       console.log("Importing token:", name, symbol, address);
 
