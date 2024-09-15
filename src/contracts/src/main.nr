@@ -57,6 +57,7 @@ contract EcdsaKHOTPAccount {
         actions.verify_private_authwit(inner_hash)
     }
 
+    #[aztec(noinitcheck)]
     #[contract_library_method]
     fn is_valid_impl(context: &mut PrivateContext, outer_hash: Field) -> bool {
         // Load storage
