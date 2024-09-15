@@ -11,8 +11,8 @@ Aztec Wallet UI is a comprehensive, feature-rich wallet application built on the
   - [Token Management](#token-management)
   - [WalletConnect Integration](#walletconnect-integration)
   - [Transaction Handling](#transaction-handling)
-  - [Security Features](#security-features)
   - [User Interface](#user-interface)
+  - [2FA Feature Through Account Abstraction](#2fa-feature-through-account-abstraction)
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Installation](#installation)
@@ -62,7 +62,7 @@ Experience a clean, intuitive, and responsive user interface designed for optima
 - **Dynamic Forms and Modals:** Interactive elements that facilitate various wallet operations.
 - **Responsive Tables:** Easily view and manage your token balances and transaction histories with adaptable table designs that adapt to different screen sizes.
 
-### **2FA Feature Through Account Abstraction**
+### 2FA Feature Through Account Abstraction
 
 Aztec Wallet UI leverages Aztec's Account Abstraction to provide users with the ability to enable **Two-Factor Authentication (2FA)** through **HMAC-based One-Time Passwords (HOTP)** for their contract accounts. 
 This implementation ensures that every time a user interacts with their account contract, they must provide a one-time key, significantly enhancing the security of their transactions. 
@@ -283,7 +283,7 @@ aztec_wallet/
       - **Purpose**: Manages account-related operations such as creating, importing, and managing user accounts with optional 2FA.
       
     - **`TokenService.ts`**
-      - **Purpose**: Manages token-related operations such as creating, minting, shielding, unshielding, and transferring tokens.
+      - **Purpose**: Manages token-related operations such as creating, minting, shielding, unshielding, redeeming and transferring tokens.
       
     - **`TransactionService.ts`**
       - **Purpose**: Handles transaction-related functionalities including fetching, saving, and managing transaction history.
