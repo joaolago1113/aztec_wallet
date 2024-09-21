@@ -236,6 +236,8 @@ export class TokenService {
 
             const randAccount = await getInitialTestAccountsWallets(this.pxe);
 
+            console.log("randAccount", randAccount[0].getAddress().toString());
+
             let callPrivateBalance: ContractFunctionInteraction = await tokenContract.withWallet(randAccount[0]).methods.balance_of_private(addressWallet);
             let callPublicBalance: ContractFunctionInteraction = await tokenContract.withWallet(randAccount[0]).methods.balance_of_public(addressWallet);
 
@@ -244,6 +246,9 @@ export class TokenService {
               publicBalance = await callPublicBalance.simulate();
 
             } catch (error) {
+
+
+
               console.error(`Error simulating public balance for ${token.symbol}:`, error);
             }
 

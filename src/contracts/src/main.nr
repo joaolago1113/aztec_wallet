@@ -61,85 +61,100 @@ contract EcdsaKHOTPAccount {
 
     #[contract_library_method]
     fn is_valid_impl(context: &mut PrivateContext, outer_hash: Field) -> bool {
-
         let storage = Storage::init(context);
         let public_key = storage.public_key.get_note();
 
-        // Load hotp_secret note
+        // Load HOTP secret and counter
         let hotp_secret = storage.hotp_secret.get_note().note;
 
-        // Load auth witness
-        let witness: [Field; 64] = unsafe {
-            get_auth_witness(outer_hash)
-        };
+        // Load auth witness (signature)
+        let witness: [Field; 64] = unsafe { get_auth_witness(outer_hash) };
         let mut signature: [u8; 64] = [0; 64];
         for i in 0..64 {
             signature[i] = witness[i] as u8;
         }
 
+        // Prepare possible counters
+        let counters_to_try = if (hotp_secret.counter as u8) > 0 {
+            [
+                hotp_secret.counter - 1,
+                hotp_secret.counter,
+                hotp_secret.counter + 1,
+            ]
+        } else {
+            [
+                hotp_secret.counter,
+                hotp_secret.counter + 1,
+                hotp_secret.counter + 2,
+            ]
+        };
 
-        // Verify payload signature using Ethereum's signing scheme
+        let mut verification = false;
+
+        let mut verification_ret = verify_hotp_code(signature, public_key, outer_hash, hotp_secret, counters_to_try[0]);
+
+        if(verification_ret == true) {
+            verification = true;
+        }else{
+
+            verification_ret = verify_hotp_code(signature, public_key, outer_hash, hotp_secret, counters_to_try[1]);
+
+            if(verification_ret == true) {
+                verification = true;
+            }else{
+                verification_ret = verify_hotp_code(signature, public_key, outer_hash, hotp_secret, counters_to_try[2]);
+
+                if(verification_ret == true) {
+                    verification = true;
+                }
+            }   
+        }
+
+        assert(verification == true, "Invalid ECDSA signature or HOTP code");
+
+        true
+    }
+
+    #[contract_library_method]
+    fn verify_hotp_code(signature: [u8; 64], public_key: EcdsaPublicKeyNote, outer_hash: Field, hotp_secret: HotpSecretNote, counter: Field) -> bool {
+        let hotp_secret_bytes: [u8; 20] = hotp_secret.value.to_be_bytes();
+        let hotp_code = generate_hotp_code(hotp_secret_bytes, counter as u64);
+
+        // Convert hotp_code to bytes
+        let mut hotp_bytes: [u8; 4] = [0; 4];
+        let mut temp_code = hotp_code;
+        for j in 0..4 {
+            hotp_bytes[3 - j] = (temp_code & 0xff) as u8;
+            temp_code = temp_code >> 8;
+        }
+
+        // Construct combined message
         let outer_hash_bytes: [u8; 32] = outer_hash.to_be_bytes();
-        let hashed_message: [u8; 32] = std::hash::sha256(outer_hash_bytes);
+        let mut combined_message: [u8; 36] = [0; 36]; // 32 + 4 bytes
 
-        let verification = std::ecdsa_secp256k1::verify_signature(
+        // Copy outer_hash_bytes into combined_message
+        for i in 0..32 {
+            combined_message[i] = outer_hash_bytes[i];
+        }
+
+        // Copy hotp_bytes into combined_message
+        for i in 0..4 {
+            combined_message[32 + i] = hotp_bytes[i];
+        }
+
+        // Compute combinedMessageHash
+        let combined_message_hash = std::hash::sha256(combined_message);
+
+        let combined_message_hash_hash = std::hash::sha256(combined_message_hash);
+
+        // Verify signature over combinedMessageHash
+        std::ecdsa_secp256k1::verify_signature(
             public_key.x,
             public_key.y,
             signature,
-            hashed_message,
-        );
-
-        assert(verification == true, "Invalid ECDSA signature");
-
-        // Extract HOTP code from the witness
-        let hotp_code = (witness[67] as u32)
-            | ((witness[66] as u32) << 8)
-            | ((witness[65] as u32) << 16)
-            | ((witness[64] as u32) << 24);
-
-        let hotp_secret_bytes: [u8; 20] = hotp_secret.value.to_be_bytes();
-
-        // Generate valid HOTP codes for counter -1, counter, counter +1
-        let mut code_valid = false;
-
-        // Handle potential underflow when subtracting 1 from the counter
-        let mut counters_to_try: [Field; 3] = [0; 3];
-        
-        if ((hotp_secret.counter as u8) > 0) {
-
-            counters_to_try =
-            [
-                hotp_secret.counter,
-                hotp_secret.counter - 1,
-                hotp_secret.counter + 1,
-            ];
-        } else {
-            counters_to_try = [hotp_secret.counter, hotp_secret.counter + 1, hotp_secret.counter + 2];
-        };
-
-        let mut valid_code = generate_hotp_code(hotp_secret_bytes, counters_to_try[0] as u64);
-
-        if hotp_code == valid_code {
-            code_valid = true;
-        }else{
-            valid_code = generate_hotp_code(hotp_secret_bytes, counters_to_try[1] as u64);
-
-            if hotp_code == valid_code {
-                code_valid = true;
-            }else{
-                valid_code = generate_hotp_code(hotp_secret_bytes, counters_to_try[2] as u64);
-
-                if hotp_code == valid_code {
-                    code_valid = true;
-                }
-            }
-        }
-
-        assert(code_valid == true, "Invalid HOTP code");
-
-        verification & code_valid
+            combined_message_hash_hash,
+        )
     }
-
 
     #[contract_library_method]
     fn update_hotp_counter(context: &mut PrivateContext) {

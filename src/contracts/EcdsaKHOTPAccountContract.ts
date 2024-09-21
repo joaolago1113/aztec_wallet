@@ -41,9 +41,6 @@ export class EcdsaKHOTPAccountContract extends DefaultAccountContract {
 class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
   constructor(private signingPrivateKey: Buffer, private accountContract: DefaultAccountContract, private address: AztecAddress) {}
 
-
-
-  /*
   async createAuthWit(messageHash: Fr): Promise<AuthWitness> {
     let hotpCode = await this.showHOTPModal();
   
@@ -56,7 +53,8 @@ class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
     }
   
     // Construct combined message
-    const messageHashBytes = messageHash.toBuffer(); // Assuming 32 bytes
+    const messageHashBytes = messageHash.toBuffer(); 
+    
     const combinedMessage = new Uint8Array(messageHashBytes.length + hotpBytes.length);
     combinedMessage.set(messageHashBytes, 0);
     combinedMessage.set(hotpBytes, messageHashBytes.length);
@@ -70,27 +68,6 @@ class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
   
     // Auth witness is the signature (r, s)
     return Promise.resolve(new AuthWitness(messageHash, [...signature.r, ...signature.s]));
-  }
-  */
-  
-  async createAuthWit(messageHash: Fr): Promise<AuthWitness> {
-    let totpCode = await this.showHOTPModal();
-
-    const ecdsa = new Ecdsa();
-    const signature = ecdsa.constructSignature(messageHash.toBuffer(), this.signingPrivateKey);
-
-    const combinedSignature = new Uint8Array(signature.r.length + signature.s.length + 4);
-    combinedSignature.set(signature.r, 0);
-    combinedSignature.set(signature.s, 32);
-    
-    const hotpBytes = new Uint8Array(4);
-    for (let i = 3; i >= 0; i--) {
-        hotpBytes[i] = totpCode % 256;
-        totpCode = Math.floor(totpCode / 256);
-    }
-    combinedSignature.set(hotpBytes, 64);
-
-    return Promise.resolve(new AuthWitness(messageHash, [...combinedSignature]));
   }
 
   private async showHOTPModal(): Promise<number> {
