@@ -29,7 +29,7 @@
     "@aztec/foundation": "0.55.1",
     "@aztec/noir-contracts.js": "0.55.1",
     "@aztec/sdk": "^2.1.97",
-    "@shieldswap/wallet-sdk": "0.55.1",
+    "@shieldswap/wallet-sdk": "0.54.0",
     "@types/node": "^18.7.23",
     "@types/qrcode-generator": "^1.0.6",
     "@walletconnect/client": "^1.8.0",
