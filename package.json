@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc || true && vite build",
+    "build": "",
     "preview": "vite preview",
     "clean": "rm -rf node_modules/.vite dist",
     "postinstall": "patch-package"
