@@ -10,7 +10,7 @@ import { sha256 } from '../utils/CryptoUtils.js';
 
 import { type NoirCompiledContract, loadContractArtifact, Contract, type AztecAddress } from '@aztec/aztec.js';
 
-import EcdsaKCustomAccountContractJson from './target/ecdsa_k_hotp_account_contract-EcdsaKHOTPAccount.json';
+import EcdsaKCustomAccountContractJson from './target/ecdsa_k_hotp_account_contract2-EcdsaKHOTPAccount2.json';
 
 export const EcdsaKCustomAccountContractArtifact = loadContractArtifact(EcdsaKCustomAccountContractJson as NoirCompiledContract);
 
@@ -86,8 +86,14 @@ class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
           <p class="hotp-counter">Counter: <span>${counter}</span></p>
           <form id="hotpForm">
             <div class="form-group">
-              <label for="hotpCode">6-Digit HOTP Code:</label>
-              <input type="text" id="hotpCode" class="input" required pattern="\\d{6}">
+              <div class="input-group">
+                <input type="text" id="hotpCode1" class="input code-input" maxlength="1" required>
+                <input type="text" id="hotpCode2" class="input code-input" maxlength="1" required>
+                <input type="text" id="hotpCode3" class="input code-input" maxlength="1" required>
+                <input type="text" id="hotpCode4" class="input code-input" maxlength="1" required>
+                <input type="text" id="hotpCode5" class="input code-input" maxlength="1" required>
+                <input type="text" id="hotpCode6" class="input code-input" maxlength="1" required>
+              </div>
             </div>
             <div class="form-actions">
               <button type="submit" class="button primary-button">Submit</button>
@@ -100,6 +106,35 @@ class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
 
       const hotpForm = modal.querySelector('#hotpForm') as HTMLFormElement;
       const cancelButton = modal.querySelector('#cancelHOTP') as HTMLButtonElement;
+      const codeInputs = modal.querySelectorAll('.code-input');
+
+      codeInputs.forEach((input, index) => {
+        (input as HTMLInputElement).addEventListener('input', (event) => {
+          const target = event.target as HTMLInputElement;
+          const value = target.value;
+
+          if (index === 0 && value.length === 6) {
+            // If pasting into the first input and it's 6 digits, distribute to all inputs
+            for (let i = 0; i < 6; i++) {
+              (codeInputs[i] as HTMLInputElement).value = value[i];
+            }
+            (codeInputs[5] as HTMLInputElement).focus();
+          } else if (value.length === 1 && index < codeInputs.length - 1) {
+            (codeInputs[index + 1] as HTMLInputElement).focus();
+          }
+        });
+        (input as HTMLInputElement).addEventListener('paste', (event) => {
+          event.preventDefault();
+          const pastedText = (event.clipboardData || (window as any).clipboardData).getData('text');
+          if (pastedText.length === 6 && /^\d+$/.test(pastedText)) {
+            for (let i = 0; i < 6; i++) {
+              (codeInputs[i] as HTMLInputElement).value = pastedText[i];
+            }
+            (codeInputs[5] as HTMLInputElement).focus();
+          }
+        });
+        (input as HTMLInputElement).style.caretColor = 'transparent';
+      });
 
       cancelButton.addEventListener('click', () => {
         document.body.removeChild(modal);
@@ -108,11 +143,10 @@ class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
 
       hotpForm.addEventListener('submit', (event) => {
         event.preventDefault();
-        const hotpCodeInput = hotpForm.querySelector('#hotpCode') as HTMLInputElement;
-        const hotpCode = hotpCodeInput.value.trim();
+        const hotpCode = Array.from(codeInputs).map(input => (input as HTMLInputElement).value).join('');
 
         if (hotpCode.length !== 6 || !/^\d+$/.test(hotpCode)) {
-          alert('Please enter a valid 6-digit HOTP code.');
+          alert('Please enter a valid 6-digit 2FA code.');
           return;
         }
 
@@ -121,6 +155,7 @@ class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
       });
 
       document.body.appendChild(modal);
+      (codeInputs[0] as HTMLInputElement).focus();
     });
   }
 }

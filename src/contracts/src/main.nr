@@ -1,6 +1,6 @@
 mod hotp_note;
 
-contract EcdsaKHOTPAccount {
+contract EcdsaKHOTPAccount2 {
 
     use crate::hotp_note::HotpSecretNote;
 
@@ -77,8 +77,8 @@ contract EcdsaKHOTPAccount {
         // Prepare possible counters
         let counters_to_try = if (hotp_secret.counter as u8) > 0 {
             [
-                hotp_secret.counter - 1,
                 hotp_secret.counter,
+                hotp_secret.counter - 1,
                 hotp_secret.counter + 1,
             ]
         } else {
@@ -128,11 +128,9 @@ contract EcdsaKHOTPAccount {
             temp_code = temp_code >> 8;
         }
 
-        // Construct combined message
         let outer_hash_bytes: [u8; 32] = outer_hash.to_be_bytes();
         let mut combined_message: [u8; 36] = [0; 36]; // 32 + 4 bytes
 
-        // Copy outer_hash_bytes into combined_message
         for i in 0..32 {
             combined_message[i] = outer_hash_bytes[i];
         }
@@ -142,12 +140,10 @@ contract EcdsaKHOTPAccount {
             combined_message[32 + i] = hotp_bytes[i];
         }
 
-        // Compute combinedMessageHash
         let combined_message_hash = std::hash::sha256(combined_message);
 
         let combined_message_hash_hash = std::hash::sha256(combined_message_hash);
 
-        // Verify signature over combinedMessageHash
         std::ecdsa_secp256k1::verify_signature(
             public_key.x,
             public_key.y,

@@ -7,7 +7,7 @@ import { UIManager } from '../ui/UIManager.js';
 import { AccountService } from '../services/AccountService.js';
 import { CheatCodes } from '@aztec/aztec.js';
 import { CONFIG } from '../config.js';
-import { getInitialTestAccountsWallets} from "@aztec/accounts/testing";
+import { getInitialTestAccountsWallets, deployInitialTestAccounts} from "@aztec/accounts/testing";
 import { TransactionService } from './TransactionService.js';
 
 
@@ -21,6 +21,7 @@ export class TokenService {
   private pendingShields: { [key: string]: Fr[] } = {};
   private cc: CheatCodes | null = null;
   private ccInitialized: Promise<void> | null = null;
+  private initialTestAccountsSetup: Promise<void> | null = null;
 
   constructor(
     private pxe: PXE,
@@ -35,7 +36,25 @@ export class TokenService {
     this.loadPendingShieldsFromLocalStorage();
 
     this.ccInitialized = this.initializeCheatCodes();
+    this.initialTestAccountsSetup = this.setupInitialTestAccounts();
   }
+
+  private async setupInitialTestAccounts(): Promise<void> {
+    try {
+      const randAccount = await getInitialTestAccountsWallets(this.pxe);
+
+      const address = randAccount[0].getAddress();
+      const registeredAccount = await this.pxe.getRegisteredAccount(address);
+
+      if(!registeredAccount)
+        await deployInitialTestAccounts(this.pxe);
+      else
+        console.log('Initial test accounts already set up');
+    } catch (deployError) {
+      console.error('Error deploying initial test accounts:', deployError);
+    }
+  }
+
 
   private async initializeCheatCodes(): Promise<void> {
     try {
@@ -191,6 +210,8 @@ export class TokenService {
   }
 
   async updateTable() {
+    await this.setupInitialTestAccounts();
+
     if (this.updateTableDebounceTimer) {
       clearTimeout(this.updateTableDebounceTimer);
     }
@@ -218,6 +239,11 @@ export class TokenService {
       this.uiManager.showLoadingSpinner();
 
       try {
+        // Ensure initial test accounts are set up before updating the table
+        if (this.initialTestAccountsSetup) {
+          await this.initialTestAccountsSetup;
+        }
+        
         this.ensureUniqueTokens(); // Add this line to ensure unique tokens before processing
         console.log("Processing tokens:", this.tokens);
         const tokenRows = await Promise.all(this.tokens.map(async (token) => {
@@ -354,19 +380,17 @@ export class TokenService {
       throw new Error("No wallet set. Please call setupTokens first.");
     }
 
+    await this.setupInitialTestAccounts();
+
+    const randAccount = await getInitialTestAccountsWallets(this.pxe);
+
     const balances: { [symbol: string]: { privateBalance: bigint; publicBalance: bigint } } = {};
     for (const token of this.tokens) {
       const tokenAddress = await this.getTokenAddress(token);
       const tokenContract = await TokenContract.at(tokenAddress, this.currentWallet);
 
-      const randAccount = await getInitialTestAccountsWallets(this.pxe);
       const privateBalance = (await tokenContract.withWallet(randAccount[0]).methods.balance_of_private(address).simulate());
       const publicBalance = (await tokenContract.withWallet(randAccount[0]).methods.balance_of_public(address).simulate());
-
-      //await this.ensureCheatCodesInitialized();
-      //const addressWallet = this.currentWallet!.getAddress();
-      //let ownerPublicBalanceSlot: Fr = this.cc!.aztec.computeSlotInMap(TokenContract.storage.public_balances.slot, addressWallet);
-      //const publicBalance = (await this.pxe.getPublicStorageAt(tokenAddress, ownerPublicBalanceSlot)).toBigInt();
 
       balances[token.symbol] = { privateBalance, publicBalance };
     }
@@ -434,6 +458,8 @@ export class TokenService {
 
 
       const tokenContract = await TokenContract.at(AztecAddress.fromString(tokenAddress), this.currentWallet);
+      await this.setupInitialTestAccounts();
+
       const randAccount = await getInitialTestAccountsWallets(this.pxe);
       const simluatedName = (await tokenContract.withWallet(randAccount[0]).methods.public_get_name().simulate()).value;
       const simluatedSymbol = (await tokenContract.withWallet(randAccount[0]).methods.public_get_symbol().simulate()).value;
@@ -840,6 +866,8 @@ export class TokenService {
         //simluatedName = (await this.cc!.aztec.loadPublic(tokenAddress, nameSlot));
         //const symbolSlot = this.cc!.aztec.computeSlotInMap(TokenContract.storage.symbol.slot, addressWallet);
         //simluatedSymbol = (await this.cc!.aztec.loadPublic(tokenAddress, symbolSlot));
+
+        await this.setupInitialTestAccounts(); // Add this line
 
         const randAccount = await getInitialTestAccountsWallets(this.pxe);
         simluatedName = (await tokenContract.withWallet(randAccount[0]).methods.public_get_name().simulate()).value;

@@ -1,5 +1,5 @@
 [package]
-name = "ecdsa_k_hotp_account_contract"
+name = "ecdsa_k_hotp_account_contract2"
 type = "contract"
 authors = [ "" ]
 compiler_version = ">=0.25.0"
