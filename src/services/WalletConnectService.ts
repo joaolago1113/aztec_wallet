@@ -294,7 +294,7 @@ export class WalletConnectService {
           const amount = Fr.fromString('0x' + BigInt(params.request.params[0].amount).toString(16));
           const secretHash = Fr.fromString(params.request.params[0].secretHash);
           const tokenAddress = Fr.fromString(params.request.params[0].token);
-          const txHash = TxHash.fromString(params.request.params[0].txHash);
+          const txHash = new TxHash(Buffer.from(params.request.params[0].txHash, 'hex'));
 
           wallet = await this.accountService.getWalletByAddress(from);
 

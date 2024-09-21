@@ -29,10 +29,9 @@ export default defineConfig({
         rollupOptions: {
             input: {
                 main: 'index.html',
-                transactions: 'transactions.html',
-                bridge: 'bridge.html',
-                apps: 'apps.html',
-                tokens: 'tokens.html',
+                transactions: 'public/transactions.html',
+                apps: 'public/apps.html',
+                tokens: 'public/tokens.html',
             },
         },
     },
