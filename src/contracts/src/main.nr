@@ -59,28 +59,29 @@ contract EcdsaKHOTPAccount {
         actions.verify_private_authwit(inner_hash)
     }
 
-    #[aztec(noinitcheck)]
     #[contract_library_method]
     fn is_valid_impl(context: &mut PrivateContext, outer_hash: Field) -> bool {
-        // Load storage
-        let storage = Storage::init(context);
 
-        // Load public key from storage
+        let storage = Storage::init(context);
         let public_key = storage.public_key.get_note();
 
         // Load hotp_secret note
         let hotp_secret = storage.hotp_secret.get_note().note;
 
         // Load auth witness
-        let witness: [Field; 68] = unsafe { get_auth_witness(outer_hash) };
+        let witness: [Field; 64] = unsafe {
+            get_auth_witness(outer_hash)
+        };
         let mut signature: [u8; 64] = [0; 64];
         for i in 0..64 {
             signature[i] = witness[i] as u8;
         }
 
+
         // Verify payload signature using Ethereum's signing scheme
         let outer_hash_bytes: [u8; 32] = outer_hash.to_be_bytes();
         let hashed_message: [u8; 32] = std::hash::sha256(outer_hash_bytes);
+
         let verification = std::ecdsa_secp256k1::verify_signature(
             public_key.x,
             public_key.y,
@@ -136,7 +137,7 @@ contract EcdsaKHOTPAccount {
 
         assert(code_valid == true, "Invalid HOTP code");
 
-        true
+        verification & code_valid
     }
 
 

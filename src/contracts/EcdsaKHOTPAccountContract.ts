@@ -6,6 +6,7 @@ import { decode as base32Decode } from 'hi-base32';
 import { getWallet } from '@aztec/aztec.js/wallet';
 import { PXEFactory } from '../factories/PXEFactory.js';
 import { DefaultAccountContract } from '@aztec/accounts/defaults';
+import { sha256 } from '../utils/CryptoUtils.js';
 
 import { type NoirCompiledContract, loadContractArtifact, Contract, type AztecAddress } from '@aztec/aztec.js';
 
@@ -40,6 +41,38 @@ export class EcdsaKHOTPAccountContract extends DefaultAccountContract {
 class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
   constructor(private signingPrivateKey: Buffer, private accountContract: DefaultAccountContract, private address: AztecAddress) {}
 
+
+
+  /*
+  async createAuthWit(messageHash: Fr): Promise<AuthWitness> {
+    let hotpCode = await this.showHOTPModal();
+  
+    // Convert hotpCode to bytes
+    const hotpBytes = new Uint8Array(4);
+    let tempCode = hotpCode;
+    for (let i = 3; i >= 0; i--) {
+      hotpBytes[i] = tempCode % 256;
+      tempCode = Math.floor(tempCode / 256);
+    }
+  
+    // Construct combined message
+    const messageHashBytes = messageHash.toBuffer(); // Assuming 32 bytes
+    const combinedMessage = new Uint8Array(messageHashBytes.length + hotpBytes.length);
+    combinedMessage.set(messageHashBytes, 0);
+    combinedMessage.set(hotpBytes, messageHashBytes.length);
+  
+    // Compute combinedMessageHash
+    const combinedMessageHash = sha256(combinedMessage);
+  
+    // Sign the combinedMessageHash
+    const ecdsa = new Ecdsa();
+    const signature = ecdsa.constructSignature(combinedMessageHash, this.signingPrivateKey);
+  
+    // Auth witness is the signature (r, s)
+    return Promise.resolve(new AuthWitness(messageHash, [...signature.r, ...signature.s]));
+  }
+  */
+  
   async createAuthWit(messageHash: Fr): Promise<AuthWitness> {
     let totpCode = await this.showHOTPModal();
 
