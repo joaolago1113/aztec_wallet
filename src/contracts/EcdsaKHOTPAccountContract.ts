@@ -14,34 +14,6 @@ import EcdsaKCustomAccountContractJson from './target/ecdsa_k_hotp_account_contr
 export const EcdsaKCustomAccountContractArtifact = loadContractArtifact(EcdsaKCustomAccountContractJson as NoirCompiledContract);
 
 
-/*
-export class EcdsaKCustomAccountContract extends DefaultAccountContract {
-  constructor(private signingPrivateKey: Buffer) {
-    super(EcdsaKCustomAccountContractArtifact as ContractArtifact);
-  }
-
-  getDeploymentArgs() {
-    const signingPublicKey = new Ecdsa().computePublicKey(this.signingPrivateKey);
-    return [signingPublicKey.subarray(0, 32), signingPublicKey.subarray(32, 64)];
-  }
-
-  getAuthWitnessProvider(_address: CompleteAddress): AuthWitnessProvider {
-    return new EcdsaKCustomAuthWitnessProvider(this.signingPrivateKey);
-  }
-}
-
-class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
-  constructor(private signingPrivateKey: Buffer) {}
-
-  createAuthWit(messageHash: Fr): Promise<AuthWitness> {
-    const ecdsa = new Ecdsa();
-    const signature = ecdsa.constructSignature(messageHash.toBuffer(), this.signingPrivateKey);
-    return Promise.resolve(new AuthWitness(messageHash, [...signature.r, ...signature.s]));
-  }
-}
-  */
-
-
 export class EcdsaKHOTPAccountContract extends DefaultAccountContract {
   constructor(private signingPrivateKey: Buffer, private totpSecret: Buffer) {
     super(EcdsaKCustomAccountContractArtifact);

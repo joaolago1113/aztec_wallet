@@ -47,6 +47,8 @@ contract EcdsaKHOTPAccount {
     fn entrypoint(app_payload: AppPayload, fee_payload: FeePayload, cancellable: bool) {
         let actions = AccountActions::init(&mut context, is_valid_impl);
         actions.entrypoint(app_payload, fee_payload, cancellable);
+        
+        update_hotp_counter(&mut context);
     }
 
     #[aztec(private)]
@@ -67,7 +69,7 @@ contract EcdsaKHOTPAccount {
         let public_key = storage.public_key.get_note();
 
         // Load hotp_secret note
-        let mut hotp_secret = storage.hotp_secret.get_note().note;
+        let hotp_secret = storage.hotp_secret.get_note().note;
 
         // Load auth witness
         let witness: [Field; 68] = unsafe { get_auth_witness(outer_hash) };
@@ -134,25 +136,35 @@ contract EcdsaKHOTPAccount {
 
         assert(code_valid == true, "Invalid HOTP code");
 
-        // Update the counter to the accepted counter + 1
-        hotp_secret.counter += 1;
+        true
+    }
 
-        // Replace the hotp_secret note with the updated counter
+
+    #[contract_library_method]
+    fn update_hotp_counter(context: &mut PrivateContext) {
+        // Initialize storage
+        let storage = Storage::init(context);
+
+        // Retrieve the current HOTP secret note
+        let mut hotp_secret_note = storage.hotp_secret.get_note().note;
+
+        // Update the counter
+        hotp_secret_note.counter += 1;
+
+        // Get contract address and keys
         let this = context.this_address();
         let this_keys = get_current_public_keys(context, this);
 
+        // Replace the updated HOTP secret note in storage
         storage.hotp_secret
-            .replace(&mut hotp_secret)
+            .replace(&mut hotp_secret_note)
             .emit(encode_and_encrypt_note_with_keys(
                 context,
                 this_keys.ovpk_m,
                 this_keys.ivpk_m,
                 this,
             ));
-
-        true
     }
-
 
     #[contract_library_method]
     fn generate_hotp_code(key: [u8; 20], counter: u64) -> u32 {
