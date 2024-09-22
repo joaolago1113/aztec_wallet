@@ -6,7 +6,7 @@ I've been working on Aztec Wallet UI - an intuitive wallet application based on 
 
 # Demo
 
-
+https://github.com/user-attachments/assets/418f2db6-0f2d-4aaf-8e4f-3f65b48e552d
 
 ## Table of Contents
 
