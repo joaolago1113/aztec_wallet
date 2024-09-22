@@ -2,15 +2,11 @@ import { SignClient } from '@walletconnect/sign-client';
 import { PairingTypes } from '@walletconnect/types';
 import { AccountService } from './AccountService.js';
 import { UIManager } from '../ui/UIManager.js';
-import { type AccountWallet, SentTx, Fr, computeAuthWitMessageHash, computeInnerAuthWitHash, computeSecretHash, AztecAddress, Note, ExtendedNote  } from '@aztec/aztec.js';
-import { PXEFactory } from '../factories/PXEFactory.js';
-import { AuthWitness, PXE } from '@aztec/aztec.js';
+import { type AccountWallet, SentTx, Fr, computeSecretHash, AztecAddress, Note, ExtendedNote  } from '@aztec/aztec.js';
 import { FunctionType } from '@aztec/foundation/abi';
-import { TxHash, BatchCall, FunctionCall, FunctionSelector } from '@aztec/aztec.js';
-import { ExecutionRequestInit } from '@aztec/aztec.js/entrypoint';
+import { TxHash, FunctionCall, FunctionSelector } from '@aztec/aztec.js';
 import { EngineTypes } from '@walletconnect/types';
 import { SessionTypes } from '@walletconnect/types';
-import { TxExecutionRequest, type TxReceipt } from '@aztec/circuit-types';
 import { TokenContract } from '@aztec/noir-contracts.js';
 import { KeystoreFactory } from '../factories/KeystoreFactory.js';
 
