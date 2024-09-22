@@ -2,7 +2,7 @@
 
 # Aztec Wallet UI 
 
-I've been working on Aztec Wallet UI - an intuitive wallet application based on the Aztec Protocol. It enables you to safely and easily manage your cryptocurrency accounts by creating new ones, importing existing accounts, and quickly switching between them. For extra security, optional two-factor authentication may be enabled using HMAC-based One-Time Passwords. Token creation and minting, import of contracts, and balance management are also easily achievable. You can view your transaction history, including pending and completed transactions, and shield, unshield, or send tokens with ease. This wallet interacts with decentralized apps through ShieldSwap using WalletConnect.
+Aztec Wallet is an intuitive wallet application I developed during a recent hackathon on the Aztec Protocol. It enables you to easily manage your cryptocurrency accounts by creating new ones, importing existing accounts, and quickly switching between them. For extra security, optional two-factor authentication may be enabled using HMAC-based One-Time Passwords. Token creation and minting, import of contracts, and balance management are also easily achievable. You can view your transaction history, including pending and completed transactions, and shield, unshield, or send tokens with ease. This wallet interacts with decentralized apps through ShieldSwap using WalletConnect.
 
 # Demo
 
