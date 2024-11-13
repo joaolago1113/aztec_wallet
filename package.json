@@ -8,7 +8,6 @@
     "build": "",
     "preview": "vite preview",
     "clean": "rm -rf node_modules/.vite dist",
-    "postinstall": "patch-package"
   },
   "devDependencies": {
     "@jest/globals": "^29.5.0",
