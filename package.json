@@ -21,21 +21,12 @@
     "vite": "^5.4.0"
   },
   "dependencies": {
-<<<<<<< HEAD
-    "@aztec/accounts": "0.55.1",
-    "@aztec/aztec.js": "0.55.1",
-    "@aztec/circuit-types": "0.55.1",
-    "@aztec/circuits.js": "0.55.1",
-    "@aztec/foundation": "0.55.1",
-    "@aztec/noir-contracts.js": "0.55.1",
-=======
     "@aztec/accounts": "0.68.0",
     "@aztec/aztec.js": "0.68.0",
     "@aztec/circuit-types": "0.68.0",
     "@aztec/circuits.js": "0.68.0",
     "@aztec/foundation": "0.68.0",
     "@aztec/noir-contracts.js": "0.68.0",
->>>>>>> main
     "@aztec/sdk": "^2.1.97",
     "@shieldswap/wallet-sdk": "0.68.0",
     "@types/node": "^18.7.23",

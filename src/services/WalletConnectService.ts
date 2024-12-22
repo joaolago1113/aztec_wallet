@@ -7,12 +7,8 @@ import { FunctionType } from '@aztec/foundation/abi';
 import { TxHash, FunctionCall, FunctionSelector } from '@aztec/aztec.js';
 import { EngineTypes } from '@walletconnect/types';
 import { SessionTypes } from '@walletconnect/types';
-<<<<<<< HEAD
-import { TokenContract } from '@aztec/noir-contracts.js';
-=======
 import { TxExecutionRequest, type TxReceipt } from '@aztec/circuit-types';
 import { TokenContract } from '@aztec/noir-contracts.js/Token';
->>>>>>> main
 import { KeystoreFactory } from '../factories/KeystoreFactory.js';
 
 export class WalletConnectService {
