@@ -11,7 +11,7 @@ import { ExecutionRequestInit } from '@aztec/aztec.js/entrypoint';
 import { EngineTypes } from '@walletconnect/types';
 import { SessionTypes } from '@walletconnect/types';
 import { TxExecutionRequest, type TxReceipt } from '@aztec/circuit-types';
-import { TokenContract } from '@aztec/noir-contracts.js';
+import { TokenContract } from '@aztec/noir-contracts.js/Token';
 import { KeystoreFactory } from '../factories/KeystoreFactory.js';
 
 export class WalletConnectService {

@@ -1,5 +1,5 @@
 import {  AccountWallet, Fr, AztecAddress, ContractFunctionInteraction, computeSecretHash, Note, ExtendedNote, TxHash, SignerlessWallet } from "@aztec/aztec.js";
-import { TokenContract, TokenContractArtifact } from '@aztec/noir-contracts.js';
+import { TokenContract, TokenContractArtifact } from '@aztec/noir-contracts.js/Token';
 import { getSingleKeyAccount } from '@aztec/accounts/single_key';
 import { PXE } from '@aztec/circuit-types';
 import { KeystoreFactory } from '../factories/KeystoreFactory.js';
@@ -382,7 +382,7 @@ export class TokenService {
     try {
       const { contract, address } = await this.setupToken(this.currentWallet, tokenData);
       const mintAmount = new Fr(BigInt(parsedAmount * 1e9));
-      const tx = await contract.methods.privately_mint_private_note(mintAmount).send();
+      const tx = await contract.methods.mint_to_private(this.currentWallet.getAddress(),this.currentWallet.getAddress(),mintAmount).send();
 
       await this.transactionService.saveTransaction({
         action: 'mint',
@@ -425,7 +425,7 @@ export class TokenService {
       const address = AztecAddress.fromString(tokenAddress);
       const contract = await TokenContract.at(address, this.currentWallet);
       const mintAmount = new Fr(BigInt(parsedAmount * 1e9));
-      const tx = await contract.methods.privately_mint_private_note(mintAmount).send();
+      const tx = await contract.methods.mint_to_private(this.currentWallet.getAddress(),this.currentWallet.getAddress(),mintAmount).send();
 
 
       const tokenContract = await TokenContract.at(AztecAddress.fromString(tokenAddress), this.currentWallet);
@@ -486,7 +486,7 @@ export class TokenService {
       const shieldSecretHash = computeSecretHash(shieldSecret);
 
       const tx = await tokenContract.methods
-        .shield(this.currentWallet.getAddress(), shieldAmount, shieldSecretHash, 0)
+        .transfer_to_private(this.currentWallet.getAddress(), shieldAmount)
         .send({});
 
       await this.transactionService.saveTransaction({
@@ -664,7 +664,7 @@ export class TokenService {
     try {
       // Perform the unshield transaction
       const tx = await tokenContract.methods
-        .unshield(this.currentWallet.getAddress(), this.currentWallet.getAddress(), unshieldAmount, 0)
+        .transfer_to_public(this.currentWallet.getAddress(), this.currentWallet.getAddress(), unshieldAmount, 0)
         .send({});
 
       await this.transactionService.saveTransaction({
@@ -711,7 +711,7 @@ export class TokenService {
     if (isPrivate) {
       tx = await tokenContract.methods.transfer(AztecAddress.fromString(recipient), scaledAmount).send();
     } else {
-      tx = await tokenContract.methods.transfer_public(this.currentWallet.getAddress(), AztecAddress.fromString(recipient), scaledAmount, 0).send();
+      tx = await tokenContract.methods.transfer_in_public(this.currentWallet.getAddress(), AztecAddress.fromString(recipient), scaledAmount, 0).send();
     }
 
     const txHash = await tx.getTxHash();
