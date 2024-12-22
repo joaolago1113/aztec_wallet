@@ -1,6 +1,6 @@
 import { AccountService } from '../services/AccountService.js';
 import { TokenService } from '../services/TokenService.js';
-import { TokenContract } from '@aztec/noir-contracts.js';
+import { TokenContract } from '@aztec/noir-contracts.js/Token';
 import { WalletConnectService } from '../services/WalletConnectService.js';
 import { CONFIG } from '../config.js';
 import { Fr, Note } from "@aztec/aztec.js";
@@ -833,7 +833,7 @@ export class UIManager {
 
 
 
-        call = tokenContract.methods.transfer_public(fromAddress, toAddress, amount, 0);
+        call = tokenContract.methods.transfer_in_public(fromAddress, toAddress, amount, 0);
 
         let ownerPublicBalanceSlot: Fr;
 

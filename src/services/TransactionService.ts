@@ -1,7 +1,6 @@
-import { PXE, AztecAddress } from '@aztec/aztec.js';
+import { PXE } from '@aztec/aztec.js';
 import { UIManager } from '../ui/UIManager.js';
 import { AccountService } from './AccountService.js';
-import { TokenService } from './TokenService.js';
 import { KeystoreFactory } from '../factories/KeystoreFactory.js';
 
 export interface Transaction {

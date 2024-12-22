@@ -30,3 +30,9 @@ export class CryptoUtils {
     return secret;
   }
 }
+
+export function sha256(data: Uint8Array): Uint8Array {
+  const hash = createHash('sha256');
+  hash.update(data);
+  return Uint8Array.from(hash.digest());
+}

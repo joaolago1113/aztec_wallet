@@ -2,7 +2,11 @@ import { defineConfig } from "vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 import resolve from "vite-plugin-resolve";
 
-const aztecVersion = "0.54.0";
+<<<<<<< HEAD
+const aztecVersion = "0.55.1";
+=======
+const aztecVersion = "0.68.0";
+>>>>>>> main
 
 export default defineConfig({
     plugins: [
@@ -29,10 +33,9 @@ export default defineConfig({
         rollupOptions: {
             input: {
                 main: 'index.html',
-                transactions: 'transactions.html',
-                bridge: 'bridge.html',
-                apps: 'apps.html',
-                tokens: 'tokens.html',
+                transactions: 'public/transactions.html',
+                apps: 'public/apps.html',
+                tokens: 'public/tokens.html',
             },
         },
     },

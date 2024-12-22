@@ -1299,3 +1299,25 @@ footer nav a:hover {
 .transaction-hash:hover {
   text-decoration: underline;
 }
+
+.input-group {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.code-input {
+  width: 3rem;
+  height: 3rem;
+  font-size: 1.5rem;
+  text-align: center;
+  border: none !important;
+  border-radius: 0 !important;
+  color: var(--foreground);
+  caret-color: transparent;
+}
+
+.code-input:focus {
+  outline: none;
+  box-shadow: none;
+}

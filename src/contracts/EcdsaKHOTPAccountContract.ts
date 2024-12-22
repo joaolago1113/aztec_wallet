@@ -6,40 +6,13 @@ import { decode as base32Decode } from 'hi-base32';
 import { getWallet } from '@aztec/aztec.js/wallet';
 import { PXEFactory } from '../factories/PXEFactory.js';
 import { DefaultAccountContract } from '@aztec/accounts/defaults';
+import { sha256 } from '../utils/CryptoUtils.js';
 
 import { type NoirCompiledContract, loadContractArtifact, Contract, type AztecAddress } from '@aztec/aztec.js';
 
-import EcdsaKCustomAccountContractJson from './target/ecdsa_k_hotp_account_contract-EcdsaKHOTPAccount.json';
+import EcdsaKCustomAccountContractJson from './target/ecdsa_k_hotp_account_contract2-EcdsaKHOTPAccount2.json';
 
 export const EcdsaKCustomAccountContractArtifact = loadContractArtifact(EcdsaKCustomAccountContractJson as NoirCompiledContract);
-
-
-/*
-export class EcdsaKCustomAccountContract extends DefaultAccountContract {
-  constructor(private signingPrivateKey: Buffer) {
-    super(EcdsaKCustomAccountContractArtifact as ContractArtifact);
-  }
-
-  getDeploymentArgs() {
-    const signingPublicKey = new Ecdsa().computePublicKey(this.signingPrivateKey);
-    return [signingPublicKey.subarray(0, 32), signingPublicKey.subarray(32, 64)];
-  }
-
-  getAuthWitnessProvider(_address: CompleteAddress): AuthWitnessProvider {
-    return new EcdsaKCustomAuthWitnessProvider(this.signingPrivateKey);
-  }
-}
-
-class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
-  constructor(private signingPrivateKey: Buffer) {}
-
-  createAuthWit(messageHash: Fr): Promise<AuthWitness> {
-    const ecdsa = new Ecdsa();
-    const signature = ecdsa.constructSignature(messageHash.toBuffer(), this.signingPrivateKey);
-    return Promise.resolve(new AuthWitness(messageHash, [...signature.r, ...signature.s]));
-  }
-}
-  */
 
 
 export class EcdsaKHOTPAccountContract extends DefaultAccountContract {
@@ -69,23 +42,32 @@ class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
   constructor(private signingPrivateKey: Buffer, private accountContract: DefaultAccountContract, private address: AztecAddress) {}
 
   async createAuthWit(messageHash: Fr): Promise<AuthWitness> {
-    let totpCode = await this.showHOTPModal();
-
-    const ecdsa = new Ecdsa();
-    const signature = ecdsa.constructSignature(messageHash.toBuffer(), this.signingPrivateKey);
-
-    const combinedSignature = new Uint8Array(signature.r.length + signature.s.length + 4);
-    combinedSignature.set(signature.r, 0);
-    combinedSignature.set(signature.s, 32);
-    
+    let hotpCode = await this.showHOTPModal();
+  
+    // Convert hotpCode to bytes
     const hotpBytes = new Uint8Array(4);
+    let tempCode = hotpCode;
     for (let i = 3; i >= 0; i--) {
-        hotpBytes[i] = totpCode % 256;
-        totpCode = Math.floor(totpCode / 256);
+      hotpBytes[i] = tempCode % 256;
+      tempCode = Math.floor(tempCode / 256);
     }
-    combinedSignature.set(hotpBytes, 64);
-
-    return Promise.resolve(new AuthWitness(messageHash, [...combinedSignature]));
+  
+    // Construct combined message
+    const messageHashBytes = messageHash.toBuffer(); 
+    
+    const combinedMessage = new Uint8Array(messageHashBytes.length + hotpBytes.length);
+    combinedMessage.set(messageHashBytes, 0);
+    combinedMessage.set(hotpBytes, messageHashBytes.length);
+  
+    // Compute combinedMessageHash
+    const combinedMessageHash = sha256(combinedMessage);
+  
+    // Sign the combinedMessageHash
+    const ecdsa = new Ecdsa();
+    const signature = ecdsa.constructSignature(combinedMessageHash, this.signingPrivateKey);
+  
+    // Auth witness is the signature (r, s)
+    return Promise.resolve(new AuthWitness(messageHash, [...signature.r, ...signature.s]));
   }
 
   private async showHOTPModal(): Promise<number> {
@@ -104,8 +86,14 @@ class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
           <p class="hotp-counter">Counter: <span>${counter}</span></p>
           <form id="hotpForm">
             <div class="form-group">
-              <label for="hotpCode">6-Digit HOTP Code:</label>
-              <input type="text" id="hotpCode" class="input" required pattern="\\d{6}">
+              <div class="input-group">
+                <input type="text" id="hotpCode1" class="input code-input" maxlength="1" required>
+                <input type="text" id="hotpCode2" class="input code-input" maxlength="1" required>
+                <input type="text" id="hotpCode3" class="input code-input" maxlength="1" required>
+                <input type="text" id="hotpCode4" class="input code-input" maxlength="1" required>
+                <input type="text" id="hotpCode5" class="input code-input" maxlength="1" required>
+                <input type="text" id="hotpCode6" class="input code-input" maxlength="1" required>
+              </div>
             </div>
             <div class="form-actions">
               <button type="submit" class="button primary-button">Submit</button>
@@ -118,6 +106,35 @@ class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
 
       const hotpForm = modal.querySelector('#hotpForm') as HTMLFormElement;
       const cancelButton = modal.querySelector('#cancelHOTP') as HTMLButtonElement;
+      const codeInputs = modal.querySelectorAll('.code-input');
+
+      codeInputs.forEach((input, index) => {
+        (input as HTMLInputElement).addEventListener('input', (event) => {
+          const target = event.target as HTMLInputElement;
+          const value = target.value;
+
+          if (index === 0 && value.length === 6) {
+            // If pasting into the first input and it's 6 digits, distribute to all inputs
+            for (let i = 0; i < 6; i++) {
+              (codeInputs[i] as HTMLInputElement).value = value[i];
+            }
+            (codeInputs[5] as HTMLInputElement).focus();
+          } else if (value.length === 1 && index < codeInputs.length - 1) {
+            (codeInputs[index + 1] as HTMLInputElement).focus();
+          }
+        });
+        (input as HTMLInputElement).addEventListener('paste', (event) => {
+          event.preventDefault();
+          const pastedText = (event.clipboardData || (window as any).clipboardData).getData('text');
+          if (pastedText.length === 6 && /^\d+$/.test(pastedText)) {
+            for (let i = 0; i < 6; i++) {
+              (codeInputs[i] as HTMLInputElement).value = pastedText[i];
+            }
+            (codeInputs[5] as HTMLInputElement).focus();
+          }
+        });
+        (input as HTMLInputElement).style.caretColor = 'transparent';
+      });
 
       cancelButton.addEventListener('click', () => {
         document.body.removeChild(modal);
@@ -126,11 +143,10 @@ class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
 
       hotpForm.addEventListener('submit', (event) => {
         event.preventDefault();
-        const hotpCodeInput = hotpForm.querySelector('#hotpCode') as HTMLInputElement;
-        const hotpCode = hotpCodeInput.value.trim();
+        const hotpCode = Array.from(codeInputs).map(input => (input as HTMLInputElement).value).join('');
 
         if (hotpCode.length !== 6 || !/^\d+$/.test(hotpCode)) {
-          alert('Please enter a valid 6-digit HOTP code.');
+          alert('Please enter a valid 6-digit 2FA code.');
           return;
         }
 
@@ -139,6 +155,7 @@ class EcdsaKCustomAuthWitnessProvider implements AuthWitnessProvider {
       });
 
       document.body.appendChild(modal);
+      (codeInputs[0] as HTMLInputElement).focus();
     });
   }
 }

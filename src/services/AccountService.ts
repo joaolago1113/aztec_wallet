@@ -12,7 +12,7 @@ import { DefaultAccountInterface } from '@aztec/accounts/defaults';
 import { derivePublicKeyFromSecretKey } from '@aztec/circuits.js';
 import { getEcdsaKWallet } from '@aztec/accounts/ecdsa';
 import { EcdsaKAccountContractArtifact } from '@aztec/accounts/ecdsa';
-import { EcdsaKHOTPAccountContract, EcdsaKCustomAccountContractArtifact } from '../contracts/EcdsaKHOTPAccountContract.js';
+import { EcdsaKHOTPAccountContract } from '../contracts/EcdsaKHOTPAccountContract.js';
 import { getCustomEcdsaKWallet } from '../utils/CustomWalletUtils.js';
 
 
