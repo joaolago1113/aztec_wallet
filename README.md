@@ -2,11 +2,7 @@
 
 # Aztec Wallet UI 
 
-Aztec Wallet is an intuitive wallet application I developed during a recent hackathon on the Aztec Protocol. It enables you to easily manage your cryptocurrency accounts by creating new ones, importing existing accounts, and quickly switching between them. For extra security, optional two-factor authentication may be enabled using HMAC-based One-Time Passwords. Token creation and minting, import of contracts, and balance management are also easily achievable. You can view your transaction history, including pending and completed transactions, and shield, unshield, or send tokens with ease. This wallet interacts with decentralized apps through ShieldSwap using WalletConnect.
-
-# Demo
-
-https://github.com/user-attachments/assets/418f2db6-0f2d-4aaf-8e4f-3f65b48e552d
+Aztec Wallet UI is a comprehensive, feature-rich wallet application built on the Aztec Protocol. It provides users with secure account management, seamless token operations, robust transaction handling, and seamless integration with decentralized applications through [ShieldSwap](https://docs.shieldswap.org/).
 
 ## Table of Contents
 
@@ -327,9 +323,9 @@ To ensure a smooth and compatible development experience with Aztec Wallet UI St
 
 | **Tool**           | **Version**                                                                                       |
 |--------------------|---------------------------------------------------------------------------------------------------|
-| **Aztec**          | `0.55.1`                                                                                           |
-| **Nargo**          | `0.34.0`                                                                                           |
-| **Noir**           | `0.34.0+1d3c4e854608cf8e92bc7bd7b2dad73fb8e0b823ac70b57ef44bfd61b92f5dc0`                                                  |
+| **Aztec**          | `0.54.0`                                                                                           |
+| **Nargo**          | `0.33.0`                                                                                           |
+| **Noir**           | `0.33.0+8ac81b15cd2a3b57493bfbfe444086deac8f3dc8`                                                  |
 | **Node.js**        | `v22.2.0`                                                                                          |
 | **Yarn**           | `1.22.22`                                                                                          |
 
