@@ -99,6 +99,7 @@ export class UIManager {
       try {
         await this.tokenService.updateBalancesForNewAccount(currentWallet);
 
+        /*
         // Fetch pending shields for each token
         const pendingShields = await Promise.all(this.tokenService.getTokens().map(async (token) => {
           const tokenAddress = await this.tokenService.getTokenAddress(token);
@@ -112,6 +113,7 @@ export class UIManager {
 
         // Update the pending shields list
         this.updatePendingShieldsList(pendingShields);
+        */
       } catch (error) {
         console.error('Error updating balances for new account:', error);
         alert('Failed to update token balances. Please try again.');
@@ -1105,7 +1107,7 @@ export class UIManager {
       }
     }
 
-    await this.updateHeaderAccountInfo(accountLabel, accountAddress, accounts);
+    await this.updateHeaderAccountInfo(accountLabel, accountAddress, (await this.accountService.getAccounts()).map(fr => AztecAddress.fromField(fr)));
   }
 
   private async updateHeaderAccountInfo(accountLabel: HTMLElement | null, accountAddress: HTMLElement | null, accounts: AztecAddress[]) {
@@ -1141,7 +1143,7 @@ export class UIManager {
         this.updateHeaderAccountInfo(
           document.getElementById('accountLabel'),
           document.getElementById('accountAddress'),
-          await this.accountService.getAccounts()
+          (await this.accountService.getAccounts()).map(fr => AztecAddress.fromField(fr))
         );
       }
     });
@@ -1491,7 +1493,7 @@ export class UIManager {
             const tokenName = target.getAttribute('data-token-name') || '';
             tokenSymbol = target.getAttribute('data-token-symbol') || '';
             const index = parseInt(target.getAttribute('data-index') || '0', 10);
-            await this.tokenService.redeemShield({ name: tokenName, symbol: tokenSymbol }, index);
+            //await this.tokenService.redeemShield({ name: tokenName, symbol: tokenSymbol }, index);
             this.showSuccessMessage(`Successfully redeemed ${tokenSymbol} shield`);
           } catch (error) {
             console.error('Error redeeming shield:', error);

@@ -67,8 +67,7 @@ export class KeyStore {
       publicKeys,
     } = deriveKeys(sk);
 
-    const publicKeysHash = publicKeys.hash();
-    const account = computeAddress(publicKeysHash, partialAddress);
+    const account = computeAddress(publicKeys, partialAddress);
 
     // Naming of keys is as follows ${account}-${n/iv/ov/t}${sk/pk}_m
     await this.#keys.set(`${account.toString()}-ivsk_m`, masterIncomingViewingSecretKey.toBuffer());

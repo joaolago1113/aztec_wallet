@@ -6,8 +6,8 @@ import { KeyStore } from '../utils/Keystore.js';
 import { CryptoUtils } from '../utils/CryptoUtils.js';
 import { UIManager } from '../ui/UIManager.js';
 import { TokenService } from './TokenService.js';
-import { KeyRegistryContract } from '@aztec/noir-contracts.js';
-import { getCanonicalKeyRegistryAddress } from '@aztec/protocol-contracts/key-registry';
+//import { KeyRegistryContract } from '@aztec/noir-contracts.js';
+//import { getCanonicalKeyRegistryAddress } from '@aztec/protocol-contracts/key-registry';
 import { DefaultAccountInterface } from '@aztec/accounts/defaults';
 import { derivePublicKeyFromSecretKey } from '@aztec/circuits.js';
 import { getEcdsaKWallet } from '@aztec/accounts/ecdsa';
@@ -205,8 +205,9 @@ export class AccountService {
   
   async getAccounts(): Promise<Fr[]> {
     await this.validateCurrentAccountIndex();
-    return this.keystore.getAccounts();
-  }
+    const addresses = await this.keystore.getAccounts(); // AztecAddress[]
+    return addresses.map(address => new Fr(address.toBuffer()) );  }
+
   getCurrentAccountIndex(): number | null {
     return this.currentAccountIndex;
   }
@@ -269,7 +270,7 @@ export class AccountService {
 
     const { masterNullifierSecretKey } = deriveKeys(newSecretKey);
 
-    await wallet.rotateNullifierKeys(masterNullifierSecretKey);
+    //await wallet.rotateNullifierKeys(masterNullifierSecretKey);
 
     await this.keystore.rotateMasterNullifierKey(wallet.getAddress(), masterNullifierSecretKey);
 

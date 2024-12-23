@@ -4,12 +4,14 @@ import { AccountService } from './AccountService.js';
 import { UIManager } from '../ui/UIManager.js';
 import { type AccountWallet, SentTx, Fr, computeSecretHash, AztecAddress, Note, ExtendedNote  } from '@aztec/aztec.js';
 import { FunctionType } from '@aztec/foundation/abi';
-import { TxHash, FunctionCall, FunctionSelector } from '@aztec/aztec.js';
+import { TxHash, FunctionCall, FunctionSelector, NoFeePaymentMethod } from '@aztec/aztec.js';
+import { type ExecutionRequestInit, type FeeOptions } from '@aztec/aztec.js/entrypoint';
 import { EngineTypes } from '@walletconnect/types';
 import { SessionTypes } from '@walletconnect/types';
 import { TxExecutionRequest, type TxReceipt } from '@aztec/circuit-types';
 import { TokenContract } from '@aztec/noir-contracts.js/Token';
 import { KeystoreFactory } from '../factories/KeystoreFactory.js';
+import { GasSettings, GasFees } from '@aztec/circuits.js';
 
 export class WalletConnectService {
   private signClient: InstanceType<typeof SignClient>;
@@ -238,7 +240,25 @@ export class WalletConnectService {
           );
           console.log('functionCalls:', functionCalls);
 
-          const txRequest = await wallet.createTxExecutionRequest({ calls: functionCalls });
+          const paymentMethod = new NoFeePaymentMethod();
+
+          const feeOptions: FeeOptions = {
+            paymentMethod: paymentMethod,
+            gasSettings: GasSettings.default({ maxFeesPerGas: new GasFees(10, 10) }) ,
+          };
+
+          const executionRequest: ExecutionRequestInit = {
+            calls: functionCalls, // Array of FunctionCall objects
+            fee: feeOptions,
+            // Add optional fields as needed:
+            // authWitnesses: [...],
+            // packedArguments: [...],
+            // nonce: new Fr(...),
+            // cancellable: true/false,
+          };
+
+
+          const txRequest = await wallet.createTxExecutionRequest(executionRequest);
 
           const keystore = KeystoreFactory.getKeystore();
 
@@ -265,10 +285,10 @@ export class WalletConnectService {
 
             let txHash: TxHash;
             try {
-              const txProof = await wallet.proveTx(txRequest, simulatePublic);
+              const txProof = await wallet.proveTx(txRequest, simulatedTx);
               txHash = await new SentTx(
                 wallet,
-                wallet.sendTx(txProof),
+                wallet.sendTx(txProof.toTx()),
               ).getTxHash();
             } catch (error: any) {
               throw new Error(`Failed to send transaction: ${error.message}`);
@@ -279,6 +299,7 @@ export class WalletConnectService {
             throw new Error('Transaction rejected by user');
           }
           break;
+        /*
         case 'aztec_experimental_tokenRedeemShield':
           console.log('aztec_experimental_tokenRedeemShield');
 
@@ -307,13 +328,13 @@ export class WalletConnectService {
             throw new Error('Derived secret does not match the provided secret');
           }
 
-          const tokenContract = await TokenContract.at(tokenAddress, wallet);
+          const tokenContract = await TokenContract.at(AztecAddress.fromString(tokenAddress.toString()), wallet);
           
           const note = new Note([amount, secretHash]);
           const extendedNote = new ExtendedNote(
             note,
             wallet!.getAddress(),
-            tokenAddress,
+            AztecAddress.fromString(tokenAddress.toString()),
             TokenContract.storage.pending_shields.slot,
             TokenContract.notes.TransparentNote.id,
             txHash
@@ -329,6 +350,7 @@ export class WalletConnectService {
             throw new Error(`Failed to redeem shield: ${error instanceof Error ? error.message : 'Unknown error'}`);
           }
           break;
+        */
         default:
           throw new Error(`Unsupported method: ${params.request.method}`);
       }

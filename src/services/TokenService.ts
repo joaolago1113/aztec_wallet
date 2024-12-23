@@ -532,9 +532,9 @@ export class TokenService {
       const shieldedTx =await tx.wait();
       console.log(`Shielded ${amount} ${token.symbol} tokens. Transaction hash: ${shieldedTx.txHash}`);
 
-      await this.addPendingShieldNoteToPXE(shieldAmount, shieldSecretHash, shieldedTx.txHash, tokenAddress, index);
+      //await this.addPendingShieldNoteToPXE(shieldAmount, shieldSecretHash, shieldedTx.txHash, tokenAddress, index);
 
-      await this.updatePendingShieldsList();
+      //await this.updatePendingShieldsList();
       await this.updateTable();
 
       await this.transactionService.saveTransaction({
@@ -552,8 +552,9 @@ export class TokenService {
   }
 
   private async getNextNonce(tokenAddress: AztecAddress): Promise<number> {
-    const pendingShields = await this.getPendingShields(tokenAddress);
-    return pendingShields.length;
+    //const pendingShields = await this.getPendingShields(tokenAddress);
+    //return pendingShields.length;
+    return 1;
   }
 
   private async deriveShieldSecret(index: number): Promise<Fr> {
@@ -563,7 +564,7 @@ export class TokenService {
     return computeSecretHash(new Fr(privateKey.toBigInt() + BigInt(index)));
   }
 
-  private async addPendingShieldNoteToPXE(amount: Fr, secretHash: Fr, txHash: TxHash, tokenAddress: AztecAddress, nonce: number) {
+/*  private async addPendingShieldNoteToPXE(amount: Fr, secretHash: Fr, txHash: TxHash, tokenAddress: AztecAddress, nonce: number) {
     const note = new Note([amount, secretHash, new Fr(nonce)]);
     const extendedNote = new ExtendedNote(
       note,
@@ -575,7 +576,9 @@ export class TokenService {
     );
     await this.currentWallet!.addNote(extendedNote);
   }
+    */
 
+  /*
   async updatePendingShieldsList() {
     const tokens = this.getTokens();
     const pendingShieldsData = await Promise.all(tokens.map(async (token) => {
@@ -593,14 +596,14 @@ export class TokenService {
     const filteredPendingShieldsData = pendingShieldsData.filter(data => data.pendingShieldNotes.length > 0);
 
     this.uiManager.updatePendingShieldsList(filteredPendingShieldsData);
-  }
+  }*/
 
   formatAmount(amount: bigint): string {
     const amountFloat = Number(amount) / 1e9;
     return amountFloat.toFixed(9).replace(/\.?0+$/, '');
   }
 
-  async redeemShield(token: { name: string; symbol: string }, noteIndex: number) {
+/*  async redeemShield(token: { name: string; symbol: string }, noteIndex: number) {
     if (!this.currentWallet) {
       throw new Error("No wallet set. Please call setupTokens first.");
     }
@@ -661,9 +664,10 @@ export class TokenService {
       console.error('Error redeeming shield:', error);
       throw error;
     }
-  }
+  }*/
 
-  async getPendingShields(tokenAddress: AztecAddress): Promise<Note[]> {
+    
+  /*async getPendingShields(tokenAddress: AztecAddress): Promise<Note[]> {
     const currentWallet = await this.accountService.getCurrentWallet();
     if (!currentWallet) {
       throw new Error("No wallet available. Please create an account first.");
@@ -681,7 +685,7 @@ export class TokenService {
     } else {
       throw new Error('CheatCodes not initialized');
     }
-  }
+  }*/
 
   async unshieldToken(token: { name: string; symbol: string }, amount: string) {
     if (!this.currentWallet) {
@@ -895,7 +899,7 @@ export class TokenService {
       await this.updateTable();
       
       // Update the Pending Shields UI
-      await this.updatePendingShieldsList();
+      //await this.updatePendingShieldsList();
 
     } catch (error) {
       console.error('Error importing existing token contract:', error);
